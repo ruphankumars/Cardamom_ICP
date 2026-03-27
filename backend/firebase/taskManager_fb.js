@@ -3,7 +3,7 @@
  * Drop-in replacement for ../taskManager.js
  */
 const { v4: uuidv4 } = require('uuid');
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 
 const COL = 'tasks';
 function col() { return getDb().collection(COL); }

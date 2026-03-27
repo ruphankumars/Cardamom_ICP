@@ -1,14 +1,15 @@
 /**
- * Push Notifications Module — Firebase Cloud Messaging
+ * Push Notifications Module — ICP Polling-Based Queue
  *
- * Sends system-level push notifications to admin/superadmin devices
- * when new orders are created.
+ * Replaces Firebase Cloud Messaging with a SQLite-backed notification queue.
+ * Notifications are persisted to the `notifications` table and polled by
+ * the Flutter app via GET /api/notifications/poll.
  *
- * Uses firebase-admin SDK's messaging().sendEachForMulticast()
- * for efficient multi-device delivery.
+ * On ICP, FCM is not available. Instead of push, clients poll for new
+ * notifications at regular intervals.
  */
 
-const { admin } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 const users = require('./users_fb');
 
 /**
@@ -72,80 +73,11 @@ async function notifyNewOrders(creatorId, creatorName, orders) {
             orderId: String(orders[0]?.id || orders[0]?.orderId || ''),
         };
 
-        console.log(`[FCM] Sending push to ${tokens.length} device(s): "${body}"`);
+        console.log(`[Notifications] Persisting notification for ${tokens.length} admin device(s): "${body}"`);
 
-        // Send multicast message with rich notification styling
-        const message = {
-            notification: {
-                title,
-                body,
-            },
-            data,
-            tokens,
-            apns: {
-                headers: {
-                    'apns-priority': '10',
-                },
-                payload: {
-                    aps: {
-                        'alert': {
-                            title,
-                            body,
-                        },
-                        'sound': 'default',
-                        'badge': 1,
-                        'mutable-content': 1,
-                        'thread-id': `order-${clientName}`,
-                    },
-                },
-            },
-            android: {
-                priority: 'high',
-                notification: {
-                    title,
-                    body,
-                    sound: 'default',
-                    channelId: 'new_orders',
-                    tag: `order-${Date.now()}`,
-                },
-            },
-        };
-
-        const response = await admin.messaging().sendEachForMulticast(message);
-
-        console.log(`[FCM] Push result: ${response.successCount} success, ${response.failureCount} failure (total tokens: ${tokens.length})`);
-
-        // Log individual results for debugging
-        response.responses.forEach((resp, idx) => {
-            if (resp.success) {
-                console.log(`[FCM]   ✅ Token ${idx}: delivered (messageId: ${resp.messageId})`);
-            } else {
-                console.error(`[FCM]   ❌ Token ${idx}: FAILED — code=${resp.error?.code}, msg=${resp.error?.message}`);
-            }
-        });
-
-        // Clean up stale tokens
-        if (response.failureCount > 0) {
-            const staleTokens = [];
-            response.responses.forEach((resp, idx) => {
-                if (!resp.success) {
-                    const errorCode = resp.error?.code;
-                    if (errorCode === 'messaging/registration-token-not-registered' ||
-                        errorCode === 'messaging/invalid-registration-token') {
-                        staleTokens.push(tokens[idx]);
-                    } else if (errorCode === 'messaging/third-party-auth-error') {
-                        console.error(`[FCM] ⚠️ APNs AUTH ERROR — iOS push will NOT work until APNs key is configured in Firebase Console!`);
-                    }
-                }
-            });
-
-            if (staleTokens.length > 0) {
-                console.log(`[FCM] Removing ${staleTokens.length} stale token(s)`);
-                users.removeStaleTokens(staleTokens).catch(err => {
-                    console.error('[FCM] Failed to remove stale tokens:', err.message);
-                });
-            }
-        }
+        // On ICP, we persist notifications to SQLite instead of sending via FCM.
+        // The Flutter app polls GET /api/notifications/poll to retrieve them.
+        await persistNotification({ title, body, type: isBatch ? 'new_orders_batch' : 'new_order', data });
     } catch (err) {
         console.error('[FCM] Push notification error:', err.message);
         console.error('[FCM] Stack:', err.stack);
@@ -165,60 +97,12 @@ async function notifyNewOrders(creatorId, creatorName, orders) {
  */
 async function sendPush({ title, body, data = {}, excludeUserId, threadId, channelId = 'general' }) {
     try {
-        const tokens = await users.getAdminFcmTokens(excludeUserId);
-        if (!tokens || tokens.length === 0) return;
+        console.log(`[Notifications] Persisting push notification: "${title}"`);
 
-        console.log(`[FCM] Sending "${title}" to ${tokens.length} device(s)`);
-
-        const message = {
-            notification: { title, body },
-            data,
-            tokens,
-            apns: {
-                headers: { 'apns-priority': '10' },
-                payload: {
-                    aps: {
-                        alert: { title, body },
-                        sound: 'default',
-                        badge: 1,
-                        'mutable-content': 1,
-                        'thread-id': threadId || data.type || 'general',
-                    },
-                },
-            },
-            android: {
-                priority: 'high',
-                notification: {
-                    title,
-                    body,
-                    sound: 'default',
-                    channelId,
-                    tag: `${data.type || 'notif'}-${Date.now()}`,
-                },
-            },
-        };
-
-        const response = await admin.messaging().sendEachForMulticast(message);
-        console.log(`[FCM] Result: ${response.successCount} ok, ${response.failureCount} fail`);
-
-        // Clean stale tokens
-        if (response.failureCount > 0) {
-            const stale = [];
-            response.responses.forEach((r, i) => {
-                if (!r.success) {
-                    const code = r.error?.code;
-                    if (code === 'messaging/registration-token-not-registered' ||
-                        code === 'messaging/invalid-registration-token') {
-                        stale.push(tokens[i]);
-                    }
-                }
-            });
-            if (stale.length > 0) {
-                users.removeStaleTokens(stale).catch(() => { });
-            }
-        }
+        // On ICP, persist to SQLite notification queue instead of FCM
+        await persistNotification({ title, body, type: data.type || 'general', data });
     } catch (err) {
-        console.error('[FCM] sendPush error:', err.message);
+        console.error('[Notifications] sendPush error:', err.message);
     }
 }
 
@@ -271,13 +155,11 @@ async function notifyApprovalResolved(status, adminName, requesterName, actionTy
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DISPATCH & TRANSPORT DOC NOTIFICATIONS — Superadmin only + Firestore persistence
+// DISPATCH & TRANSPORT DOC NOTIFICATIONS — Superadmin only + SQLite persistence
 // ═══════════════════════════════════════════════════════════════════════════
 
-const { getDb } = require('../firebaseClient');
-
 /**
- * Persist a notification to Firestore so it survives app restarts.
+ * Persist a notification to SQLite so it survives app restarts.
  * Stored in the `notifications` collection with { read: false }.
  */
 async function persistNotification({ title, body, type, data = {} }) {
@@ -304,61 +186,12 @@ async function persistNotification({ title, body, type, data = {} }) {
  */
 async function sendSuperadminPush({ title, body, data = {}, threadId, channelId = 'documents' }) {
     try {
-        const tokens = await users.getSuperadminFcmTokens();
-        if (!tokens || tokens.length === 0) {
-            console.log('[FCM] No superadmin FCM tokens found — skipping push');
-            return;
-        }
+        console.log(`[Notifications] Persisting superadmin notification: "${title}"`);
 
-        console.log(`[FCM] Sending superadmin push: "${title}" to ${tokens.length} device(s)`);
-
-        const message = {
-            notification: { title, body },
-            data,
-            tokens,
-            apns: {
-                headers: { 'apns-priority': '10' },
-                payload: {
-                    aps: {
-                        alert: { title, body },
-                        sound: 'default',
-                        badge: 1,
-                        'mutable-content': 1,
-                        'thread-id': threadId || 'documents',
-                    },
-                },
-            },
-            android: {
-                priority: 'high',
-                notification: {
-                    title, body, sound: 'default',
-                    channelId,
-                    tag: `${data.type || 'doc'}-${Date.now()}`,
-                },
-            },
-        };
-
-        const response = await admin.messaging().sendEachForMulticast(message);
-        console.log(`[FCM] Superadmin push result: ${response.successCount} ok, ${response.failureCount} fail`);
-
-        // Clean stale tokens
-        if (response.failureCount > 0) {
-            const stale = [];
-            response.responses.forEach((r, i) => {
-                if (!r.success) {
-                    const code = r.error?.code;
-                    if (code === 'messaging/registration-token-not-registered' ||
-                        code === 'messaging/invalid-registration-token') {
-                        stale.push(tokens[i]);
-                    }
-                }
-            });
-            if (stale.length > 0) {
-                users.removeStaleTokens(stale).catch(() => { });
-            }
-        }
+        // On ICP, persist to SQLite notification queue instead of FCM
+        await persistNotification({ title, body, type: data.type || 'document', data });
     } catch (err) {
-        console.error('[FCM] sendSuperadminPush error:', err.message);
+        console.error('[Notifications] sendSuperadminPush error:', err.message);
     }
 }
 
@@ -380,11 +213,8 @@ async function notifyDispatchDocSent({ companyName, clientName, invoiceNumber, c
         createdBy: createdBy || '',
     };
 
-    // Push notification + persist to Firestore
-    await Promise.all([
-        sendSuperadminPush({ title, body, data, threadId: 'dispatch-docs', channelId: 'documents' }),
-        persistNotification({ title, body, type: 'dispatch_doc', data }),
-    ]);
+    // Persist to SQLite notification queue
+    await persistNotification({ title, body, type: 'dispatch_doc', data });
 }
 
 /**
@@ -403,11 +233,8 @@ async function notifyTransportDocSent({ transportName, pageCount, date, createdB
         createdBy: createdBy || '',
     };
 
-    // Push notification + persist to Firestore
-    await Promise.all([
-        sendSuperadminPush({ title, body, data, threadId: 'transport-docs', channelId: 'documents' }),
-        persistNotification({ title, body, type: 'transport_doc', data }),
-    ]);
+    // Persist to SQLite notification queue
+    await persistNotification({ title, body, type: 'transport_doc', data });
 }
 
 module.exports = {

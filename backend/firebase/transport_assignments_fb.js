@@ -13,7 +13,7 @@
  * }
  */
 
-const { getDb, FieldValue } = require('../firebaseClient');
+const { getDb, FieldValue } = require('../../src/backend/database/sqliteClient');
 
 const COLLECTION = 'daily_transport_assignments';
 

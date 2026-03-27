@@ -16,7 +16,7 @@
  * }
  */
 
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 const { TTLCache } = require('../utils/cache');
 
 // ── Sync-level cache: prevents repeated Firestore reads within TTL window ──

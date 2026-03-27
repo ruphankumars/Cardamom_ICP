@@ -17,7 +17,7 @@
  *   packed_orders     — archived dispatched orders
  */
 
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 const CFG = require('../config');
 const { parseSheetDate, formatSheetDate } = require('../utils/date');
 

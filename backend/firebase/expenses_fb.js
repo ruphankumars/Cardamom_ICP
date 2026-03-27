@@ -3,7 +3,7 @@
  * Drop-in replacement for ../expenses.js (includes Express router)
  */
 const { Router } = require('express');
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 
 const router = Router();
 const EXPENSES_COL = 'expenses';

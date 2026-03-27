@@ -4,7 +4,7 @@
  * Server-side document enhancement with Jimp + PDF output.
  */
 const { Router } = require('express');
-const { getDb, getStorage } = require('../firebaseClient');
+const { getDb, FieldValue } = require('../../src/backend/database/sqliteClient');
 const axios = require('axios');
 const { Jimp } = require('jimp');
 const PDFDocument = require('pdfkit');
@@ -431,8 +431,7 @@ router.post('/:id/resend', async (req, res) => {
         const sentSet = new Set(allResendResults.filter(r => r.success).map(r => r.phone));
         const newSentPhones = [...sentSet];
 
-        // Update Firestore with resend results
-        const admin = require('firebase-admin');
+        // Update database with resend results
         const resendStatus = newSentPhones.length === phones.length ? 'sent'
             : newSentPhones.length > 0 ? 'partial' : 'failed';
         const updateData = {
@@ -447,7 +446,7 @@ router.post('/:id/resend', async (req, res) => {
         };
         if (newSentPhones.length > 0) {
             updateData.sentAt = new Date().toISOString();
-            updateData.sentToPhones = admin.firestore.FieldValue.arrayUnion(...newSentPhones);
+            updateData.sentToPhones = FieldValue.arrayUnion(...newSentPhones);
         }
         await col().doc(req.params.id).update(updateData);
 
@@ -521,11 +520,13 @@ router.post('/ocr', async (req, res) => {
         let engine = 'none';
 
         // ── Strategy 1: Google Cloud Vision API (best accuracy) ──
+        // NOTE: On ICP, Firebase Admin credential is not available.
+        // Vision API requires a separate auth mechanism (env var or service account).
         try {
-            const admin = require('firebase-admin');
-            const app = admin.app();
-            const credential = app.options.credential;
-            const token = await credential.getAccessToken();
+            const { GoogleAuth } = require('google-auth-library');
+            const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-vision'] });
+            const client = await auth.getClient();
+            const token = await client.getAccessToken();
 
             const visionResp = await axios.post(
                 'https://vision.googleapis.com/v1/images:annotate',

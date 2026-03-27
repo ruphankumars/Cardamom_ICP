@@ -16,7 +16,7 @@
  *   ../utils/date      -> formatSheetDate, normalizeSheetDate, parseSheetDate
  */
 
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 const { formatSheetDate, normalizeSheetDate, parseSheetDate } = require('../utils/date');
 const CFG = require('../config');
 

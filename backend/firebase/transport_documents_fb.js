@@ -3,7 +3,7 @@
  * Handles multi-image PDF upload to transports via WhatsApp (Meta Cloud API).
  */
 const { Router } = require('express');
-const { getDb, getStorage } = require('../firebaseClient');
+const { getDb, FieldValue } = require('../../src/backend/database/sqliteClient');
 const { Jimp } = require('jimp');
 const PDFDocument = require('pdfkit');
 const pushNotifications = require('./push_notifications_fb');
@@ -356,13 +356,12 @@ router.post('/:id/resend', async (req, res) => {
         const newSentPhones = [...sentSet];
 
         // Append to existing sent records
-        const admin = require('firebase-admin');
         const updateData = {
             sentAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
         if (newSentPhones.length > 0) {
-            updateData.sentToPhones = admin.firestore.FieldValue.arrayUnion(...newSentPhones);
+            updateData.sentToPhones = FieldValue.arrayUnion(...newSentPhones);
         }
         await col().doc(req.params.id).update(updateData);
 

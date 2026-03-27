@@ -16,7 +16,7 @@
  *   - No row-index bugs, no column-range bugs
  */
 
-const { getDb, runTransaction, serverTimestamp } = require('../firebaseClient');
+const { getDb, runTransaction, serverTimestamp } = require('../../src/backend/database/sqliteClient');
 const { formatSheetDate } = require('../utils/date');
 
 // Use orderBook from the Firestore module (migrated in Phase 8)

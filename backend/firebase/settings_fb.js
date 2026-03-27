@@ -5,7 +5,7 @@
  * Currently handles: notification_numbers (admin phones for order confirmations)
  */
 
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 
 const COLLECTION = 'settings';
 const NOTIF_DOC = 'notification_numbers';

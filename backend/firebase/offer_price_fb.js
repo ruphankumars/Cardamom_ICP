@@ -6,7 +6,7 @@
  */
 
 const { Router } = require('express');
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 
 const router = Router();
 const OFFERS_COL = 'offer_prices';

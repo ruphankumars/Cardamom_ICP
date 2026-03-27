@@ -6,7 +6,7 @@
  * Document model: { name, phones: [String], phone (legacy), address, gstin, _normalizedName }
  */
 
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 
 const COLLECTION = 'client_contacts';
 

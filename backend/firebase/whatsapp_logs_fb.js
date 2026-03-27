@@ -3,7 +3,7 @@
  * Logs all outbound WhatsApp messages sent via Meta Cloud API.
  * Collection: whatsapp_send_logs
  */
-const { getDb } = require('../firebaseClient');
+const { getDb, serverTimestamp } = require('../../src/backend/database/sqliteClient');
 
 const COL = 'whatsapp_send_logs';
 function col() { return getDb().collection(COL); }
@@ -28,7 +28,7 @@ async function logSend(entry) {
         const doc = {
             ...entry,
             timestamp: new Date().toISOString(),
-            createdAt: require('firebase-admin').firestore.FieldValue.serverTimestamp(),
+            createdAt: serverTimestamp(),
         };
         await col().add(doc);
     } catch (err) {

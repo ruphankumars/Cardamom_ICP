@@ -6,8 +6,7 @@
  * Each doc: { items: [...], lastUpdated: ISO string }
  */
 
-const { getDb } = require('../firebaseClient');
-const admin = require('firebase-admin');
+const { getDb, FieldValue } = require('../../src/backend/database/sqliteClient');
 
 const COLLECTION = 'dropdown_data';
 const VALID_CATEGORIES = ['clients', 'grades', 'bagbox', 'brands', 'transports'];
@@ -146,7 +145,7 @@ async function forceAddDropdownItem(category, value) {
 
     const ref = getDb().collection(COLLECTION).doc(docId);
     await ref.set({
-        items: admin.firestore.FieldValue.arrayUnion(trimmed),
+        items: FieldValue.arrayUnion(trimmed),
         lastUpdated: new Date().toISOString()
     }, { merge: true });
 
@@ -204,7 +203,7 @@ async function deleteDropdownItem(category, value) {
 
     const ref = getDb().collection(COLLECTION).doc(docId);
     await ref.update({
-        items: admin.firestore.FieldValue.arrayRemove(trimmed),
+        items: FieldValue.arrayRemove(trimmed),
         lastUpdated: new Date().toISOString()
     });
 
@@ -335,7 +334,7 @@ async function mergeClients(oldName, newName, dryRun = true) {
     let dropdownRemoved = false;
     if (hasOld) {
         await db.collection(COLLECTION).doc('clients').update({
-            items: admin.firestore.FieldValue.arrayRemove(oldTrimmed),
+            items: FieldValue.arrayRemove(oldTrimmed),
             lastUpdated: new Date().toISOString(),
         });
         dropdownRemoved = true;

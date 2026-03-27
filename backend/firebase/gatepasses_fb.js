@@ -3,7 +3,7 @@
  * Drop-in replacement for ../gatepasses.js (includes Express router)
  */
 const { Router } = require('express');
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 
 const router = Router();
 const COL = 'gate_passes';

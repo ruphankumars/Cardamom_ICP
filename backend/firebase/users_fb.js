@@ -15,8 +15,8 @@
  */
 
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
-const { getDb, getDocs, getDoc, serverTimestamp, FieldValue } = require('../firebaseClient');
+const bcrypt = require('bcryptjs');
+const { getDb, getDocs, getDoc, serverTimestamp, FieldValue } = require('../../src/backend/database/sqliteClient');
 
 const COLLECTION = 'users';
 const BCRYPT_ROUNDS = 10;

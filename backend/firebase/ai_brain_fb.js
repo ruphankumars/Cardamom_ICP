@@ -18,7 +18,7 @@
  *   ./predictive_analytics_fb   -> getDemandTrends
  */
 
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 const { parseSheetDate } = require('../utils/date');
 const { aiCache } = require('../utils/cache');
 const analytics = require('./analytics_fb');

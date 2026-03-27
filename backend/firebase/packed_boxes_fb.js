@@ -5,7 +5,7 @@
  *
  * Collection: packedBoxes
  */
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 
 const COLLECTION = 'packedBoxes';
 

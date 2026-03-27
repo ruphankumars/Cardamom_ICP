@@ -11,7 +11,7 @@
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 const { getAllClientContacts } = require('./client_contacts_fb');
 
 // ── Google Sheets auth (mirrors sheetsClient.js pattern) ───────────────

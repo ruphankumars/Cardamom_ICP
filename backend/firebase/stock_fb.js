@@ -21,7 +21,7 @@
  *   - ../featureFlags    -> useFirestore(moduleName)
  */
 
-const { getDb, createBatch } = require('../firebaseClient');
+const { getDb, createBatch } = require('../../src/backend/database/sqliteClient');
 const CFG = require('../config');
 const flags = require('../featureFlags');
 

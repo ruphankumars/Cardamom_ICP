@@ -15,7 +15,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 
 const COLLECTION = 'approval_requests';
 

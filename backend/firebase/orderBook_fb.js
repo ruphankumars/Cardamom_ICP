@@ -11,7 +11,7 @@
  *   - No column-name mismatches (Bag / Box vs Bag/Box)
  */
 
-const { getDb, createBatch, runTransaction } = require('../firebaseClient');
+const { getDb, createBatch, runTransaction } = require('../../src/backend/database/sqliteClient');
 const { formatSheetDate, normalizeSheetDate, toDate } = require('../utils/date');
 
 // Lazy-load stock_fb for sale order aggregation (replaces mergeGlue)

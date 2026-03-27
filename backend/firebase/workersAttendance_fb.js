@@ -2,7 +2,7 @@
  * Workers & Attendance — Firebase Firestore Backend
  * Drop-in replacement for ../workersAttendance.js
  */
-const { getDb, createBatch } = require('../firebaseClient');
+const { getDb, createBatch } = require('../../src/backend/database/sqliteClient');
 
 const WORKERS_COL = 'workers';
 const ATTENDANCE_COL = 'attendance';

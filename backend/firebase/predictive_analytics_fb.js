@@ -12,7 +12,7 @@
  *   cart_orders    — today's / recent dispatched orders
  */
 
-const { getDb } = require('../firebaseClient');
+const { getDb } = require('../../src/backend/database/sqliteClient');
 const { parseSheetDate } = require('../utils/date');
 
 // ---------------------------------------------------------------------------
