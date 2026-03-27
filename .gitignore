@@ -11,6 +11,11 @@ credentials.json
 serviceAccountKey.json
 .github_token
 
+# Firebase credential files (NEVER commit these)
+google-services.json
+GoogleService-Info.plist
+firebase_options.dart
+
 # Build outputs
 build/
 dist/
