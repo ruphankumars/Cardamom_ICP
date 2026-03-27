@@ -1,0 +1,75 @@
+{
+  "name": "cardamom-icp",
+  "version": "1.0.0",
+  "description": "Green Cardamom Trading Platform on Internet Computer Protocol",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build-flutter": "cd cardamom_app && flutter build web --release",
+    "deploy-web": "npm run build-flutter && rm -rf public/* && cp -R cardamom_app/build/web/* public/",
+    "dfx:start": "dfx start --background --clean",
+    "dfx:deploy": "dfx deploy",
+    "dfx:stop": "dfx stop",
+    "dev": "npm run dfx:start && npm run dfx:deploy",
+    "test": "jest --coverage --forceExit --detectOpenHandles",
+    "test:unit": "jest __tests__/unit/ --forceExit",
+    "test:api": "jest __tests__/api/ --forceExit --detectOpenHandles",
+    "test:watch": "jest --watch",
+    "db:init": "node src/backend/database/init.js",
+    "db:seed": "node src/backend/database/seed.js"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "backend/**/*.js",
+      "src/backend/**/*.{js,ts}",
+      "server.js",
+      "!backend/migrations/**",
+      "!node_modules/**"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.js"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/cardamom_app/"
+    ],
+    "moduleNameMapper": {
+      "^uuid$": "<rootDir>/__tests__/mocks/uuid.js"
+    },
+    "setupFiles": [
+      "./__tests__/setup.js"
+    ]
+  },
+  "keywords": ["icp", "internet-computer", "cardamom", "azle"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "axios": "^1.13.2",
+    "azle": "^0.26.0",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^2.2.0",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.2.1",
+    "form-data": "^4.0.5",
+    "google-auth-library": "^10.5.0",
+    "googleapis": "^166.0.0",
+    "helmet": "^8.1.0",
+    "jimp": "^1.6.0",
+    "jsonwebtoken": "^9.0.0",
+    "pdfkit": "^0.17.2",
+    "sql.js": "^1.12.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
+    "typescript": "^5.7.0"
+  }
+}

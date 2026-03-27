@@ -1,0 +1,59 @@
+4778-          child: Container(
+4779-            decoration: BoxDecoration(
+4780-              border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.5),
+4781-              borderRadius: BorderRadius.circular(24),
+4782-            ),
+4783:            child: LiquidGlassContainer(
+4784-              blur: 30,
+4785-              opacity: 0.03,
+4786-
+4787-              borderRadius: BorderRadius.circular(24),
+4788-              padding: const EdgeInsets.all(20),
+--
+5624-        child: Container(
+5625-          decoration: BoxDecoration(
+5626-            border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.5),
+5627-            borderRadius: BorderRadius.circular(24),
+5628-          ),
+5629:          child: LiquidGlassContainer(
+5630-            blur: 30,
+5631-            opacity: 0.03,
+5632-
+5633-            borderRadius: BorderRadius.circular(24),
+5634-            padding: const EdgeInsets.all(16),
+--
+5769-        child: Container(
+5770-          decoration: BoxDecoration(
+5771-            border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.5),
+5772-            borderRadius: BorderRadius.circular(24),
+5773-          ),
+5774:          child: LiquidGlassContainer(
+5775-            blur: 30,
+5776-            opacity: 0.03,
+5777-
+5778-            borderRadius: BorderRadius.circular(24),
+5779-            padding: const EdgeInsets.all(16),
+--
+5865-        child: Container(
+5866-          decoration: BoxDecoration(
+5867-            border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.5),
+5868-            borderRadius: BorderRadius.circular(24),
+5869-          ),
+5870:          child: LiquidGlassContainer(
+5871-            blur: 30,
+5872-            opacity: 0.03,
+5873-
+5874-            borderRadius: BorderRadius.circular(24),
+5875-            padding: const EdgeInsets.all(16),
+--
+5965-          child: Container(
+5966-            decoration: BoxDecoration(
+5967-              border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.5),
+5968-              borderRadius: BorderRadius.circular(24),
+5969-            ),
+5970:            child: LiquidGlassContainer(
+5971-              blur: 30,
+5972-              opacity: 0.03,
+5973-
+5974-              borderRadius: BorderRadius.circular(24),
+5975-              padding: const EdgeInsets.all(20),

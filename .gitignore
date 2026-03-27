@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+credentials.json
+serviceAccountKey.json
+.github_token
+
+# Build outputs
+build/
+dist/
+
+# ICP / DFX
+.dfx/
+canister_ids.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Coverage & Logs
+coverage/
+*.log
+backend_debug.log
+
+# Uploads (Render disk fallback)
+uploads/
+
+# Flutter build artifacts
+cardamom_app/build/
+cardamom_app/.dart_tool/
+cardamom_app/.packages
+cardamom_app/.flutter-plugins
+cardamom_app/.flutter-plugins-dependencies
+
+# SQLite database files
+*.db
+*.sqlite

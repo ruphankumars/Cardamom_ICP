@@ -1,0 +1,24 @@
+{
+  "canisters": {
+    "backend": {
+      "type": "azle",
+      "main": "src/backend/index.ts",
+      "custom": {
+        "experimental": true,
+        "env": [
+          "JWT_SECRET",
+          "NODE_ENV",
+          "WHATSAPP_TOKEN",
+          "WHATSAPP_PHONE_NUMBER_ID",
+          "SPREADSHEET_ID",
+          "PAGINATED_ENDPOINTS"
+        ]
+      }
+    },
+    "frontend": {
+      "type": "assets",
+      "source": ["cardamom_app/build/web"],
+      "dependencies": ["backend"]
+    }
+  }
+}
