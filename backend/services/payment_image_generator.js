@@ -3,7 +3,12 @@
  * Generates payment reminder images server-side so the mobile app
  * doesn't block the UI thread capturing screenshots.
  */
-const sharp = require('sharp');
+// sharp uses native libvips bindings — may not be available on ICP WASM
+let sharp;
+try { sharp = require('sharp'); } catch (e) {
+    console.warn('[PaymentImageGen] sharp not available:', e.message);
+    sharp = null;
+}
 
 // Indian number format: 1,23,45,678
 function formatINR(num) {
@@ -137,7 +142,17 @@ async function generatePaymentImage(client) {
     </svg>`;
 
     const svgBuffer = Buffer.from(svg);
-    return sharp(svgBuffer).png().toBuffer();
+    // sharp uses native bindings (libvips) which are not available on ICP WASM.
+    // Fall back to returning SVG buffer directly if sharp is unavailable.
+    if (!sharp) {
+        return svgBuffer;
+    }
+    try {
+        return await sharp(svgBuffer).png().toBuffer();
+    } catch (e) {
+        console.warn('[PaymentImageGen] sharp conversion failed, returning SVG:', e.message);
+        return svgBuffer;
+    }
 }
 
 module.exports = { generatePaymentImage };
