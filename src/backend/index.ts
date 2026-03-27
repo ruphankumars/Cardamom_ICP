@@ -201,15 +201,31 @@ export default Server(() => {
     // These are mounted at /api since misc.js uses full sub-paths like /whatsapp/verify/:phone
     app.use('/api', miscRoutes);
 
-    // Dashboard and sync (from admin routes but mounted at top level)
-    app.get('/api/dashboard', (req: any, res: any, next: any) => {
-        // Forward to admin router's /dashboard handler
-        req.url = '/dashboard';
-        adminRoutes.handle(req, res, next);
+    // Dashboard and sync — legacy top-level paths the Flutter app expects
+    // Proxy to admin router handlers directly
+    const dashboardFb = require('../../backend/firebase/dashboard_fb');
+    app.get('/api/dashboard', async (req: any, res: any) => {
+        try {
+            const { getCachedResponse: getC, setCachedResponse: setC } = require('./middleware/apiCache');
+            const cached = getC('/api/dashboard');
+            if (cached) return res.json(cached);
+            const data = await dashboardFb.getDashboardPayload();
+            setC('/api/dashboard', data);
+            res.json(data);
+        } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
     });
-    app.get('/api/sync', (req: any, res: any, next: any) => {
-        req.url = '/sync';
-        adminRoutes.handle(req, res, next);
+    app.get('/api/sync', async (req: any, res: any) => {
+        try {
+            const { getCachedResponse: getC, setCachedResponse: setC } = require('./middleware/apiCache');
+            const since = req.query.since || null;
+            const sections = req.query.sections ? String(req.query.sections).split(',') : null;
+            const cacheKey = `/api/sync?since=${since || 'null'}&sections=${sections ? sections.join(',') : 'all'}`;
+            const cached = getC(cacheKey);
+            if (cached) return res.json(cached);
+            const data = await syncFb.getSyncData(since, sections);
+            setC(cacheKey, data, 30000);
+            res.json(data);
+        } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
     });
 
     // ---------------------------------------------------------------------------
