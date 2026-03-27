@@ -1,57 +1,24 @@
 /**
- * Storage Helper — Firebase Storage with automatic Render disk fallback.
+ * Storage Helper — ICP Stub
  *
- * Tries Firebase Storage first (preferred). If the billing account is
- * disabled or any Firebase Storage error occurs, the file is saved to
- * the local Render disk and served via Express at /api/files/*.
- *
- * Once Firebase billing is restored the fallback stops activating
- * automatically — no code change or toggle needed.
+ * On ICP, there is no Firebase Storage or local filesystem.
+ * Files must be handled in-memory (buffers) or uploaded to external CDN.
+ * This stub returns null to signal that file storage is not available,
+ * allowing callers to handle gracefully (e.g., return buffer directly).
  */
-
-const path = require('path');
-const fs = require('fs').promises;
-const { getStorage } = require('../firebaseClient');
-
-// Local upload directory (relative to project root)
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 
 /**
- * Upload a buffer and return a publicly accessible URL.
+ * Upload a buffer — stub for ICP.
+ * Returns null since filesystem/Firebase Storage is not available on ICP.
  *
  * @param {Buffer} buffer       File contents
- * @param {string} storagePath  Path inside the bucket / local dir (e.g. "dispatch-documents/client/file.pdf")
- * @param {string} contentType  MIME type (e.g. "application/pdf", "image/jpeg")
- * @returns {Promise<string>}   Public URL
+ * @param {string} storagePath  Path (unused on ICP)
+ * @param {string} contentType  MIME type (unused on ICP)
+ * @returns {Promise<string|null>} Always null on ICP
  */
 async function uploadFile(buffer, storagePath, contentType) {
-    // ── 1. Try Firebase Storage ──────────────────────────────────────
-    try {
-        const bucket = getStorage();
-        const file = bucket.file(storagePath);
-        await file.save(buffer, { metadata: { contentType }, resumable: false });
-        await file.makePublic();
-        const url = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
-        console.log(`[StorageHelper] Firebase upload OK → ${storagePath}`);
-        return url;
-    } catch (err) {
-        console.warn(`[StorageHelper] Firebase Storage failed: ${err.message}`);
-        console.warn('[StorageHelper] Falling back to Render disk storage...');
-    }
-
-    // ── 2. Fallback: Render disk ─────────────────────────────────────
-    const localPath = path.join(UPLOAD_DIR, storagePath);
-    await fs.mkdir(path.dirname(localPath), { recursive: true });
-    await fs.writeFile(localPath, buffer);
-
-    const baseUrl = process.env.RENDER_EXTERNAL_URL
-        || process.env.BASE_URL
-        || `http://localhost:${process.env.PORT || 3000}`;
-
-    const url = `${baseUrl}/api/files/${storagePath}`;
-    console.log(`[StorageHelper] Saved to disk → ${localPath}`);
-    console.log(`[StorageHelper] Serving at    → ${url}`);
-    return url;
+    console.warn(`[StorageHelper] File storage not available on ICP. Path: ${storagePath}`);
+    return null;
 }
 
-module.exports = { uploadFile, UPLOAD_DIR };
+module.exports = { uploadFile, UPLOAD_DIR: '/tmp' };

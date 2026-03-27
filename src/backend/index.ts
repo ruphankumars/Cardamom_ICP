@@ -1,9 +1,9 @@
 /**
  * Cardamom ICP Backend — Azle Server Entry Point
  *
- * Wraps the existing Express application inside Azle's experimental Server()
- * function to run as an ICP canister. This is the main entry point for the
- * backend canister.
+ * Wraps the Express application inside Azle's experimental Server()
+ * to run as an ICP canister. All ~190 API endpoints are mounted from
+ * route modules extracted from the original server.js.
  */
 
 import { Server } from 'azle/experimental';
@@ -11,24 +11,93 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import { initDatabase, getDatabase } from './database/sqliteClient';
+
+// Middleware
+const { authenticateToken, requireAdmin } = require('../../backend/middleware/auth');
+const { responseGuardrail } = require('../../backend/middleware/responseGuardrail');
+const { cacheInvalidationMiddleware } = require('./middleware/apiCache');
+const syncFb = require('../../backend/firebase/sync_fb');
+
+// Route modules
+const authRoutes = require('./routes/auth');
+const ordersRoutes = require('./routes/orders');
+const stockRoutes = require('./routes/stock');
+const usersRoutes = require('./routes/users');
+const workersRoutes = require('./routes/workers');
+const attendanceRoutes = require('./routes/attendance');
+const tasksRoutes = require('./routes/tasks');
+const dropdownsRoutes = require('./routes/dropdowns');
+const clientsRoutes = require('./routes/clients');
+const clientRequestsRoutes = require('./routes/clientRequests');
+const approvalRequestsRoutes = require('./routes/approvalRequests');
+const adminRoutes = require('./routes/admin');
+const reportsRoutes = require('./routes/reports');
+const { analyticsRouter, aiRouter } = require('./routes/analytics');
+const notificationsRoutes = require('./routes/notifications');
+const miscRoutes = require('./routes/misc');
+
+// Already-modularized routers from _fb.js files
+const expenses = require('../../backend/firebase/expenses_fb');
+const gatepasses = require('../../backend/firebase/gatepasses_fb');
+const dispatchDocuments = require('../../backend/firebase/dispatch_documents_fb');
+const transportDocuments = require('../../backend/firebase/transport_documents_fb');
+const offerPrice = require('../../backend/firebase/offer_price_fb');
+
+// Scheduled job dependencies
+const approvalRequests = require('../../backend/firebase/approval_requests_fb');
+const stockCalc = require('../../backend/firebase/stock_fb');
+const { getDb } = require('./database/sqliteClient');
 
 export default Server(() => {
     const app = express();
+    app.set('trust proxy', 1);
 
     // ---------------------------------------------------------------------------
-    // Middleware
+    // Middleware Stack (same order as original server.js)
     // ---------------------------------------------------------------------------
-    app.use(express.json({ limit: '50mb' }));
-    app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-    app.use(cors());
-    app.use(compression());
 
-    // Helmet with relaxed CSP for ICP
+    // Security headers
     app.use(helmet({
         contentSecurityPolicy: false,
         crossOriginEmbedderPolicy: false,
     }));
+
+    // CORS
+    app.use(cors());
+
+    // Body parsing
+    app.use(express.json({ limit: '10mb' }));
+    app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+    // Compression
+    app.use(compression());
+
+    // Response size guardrail
+    app.use(responseGuardrail);
+
+    // Cache invalidation on writes
+    app.use(cacheInvalidationMiddleware(syncFb));
+
+    // Rate limiting
+    const apiLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 500,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { success: false, error: 'Too many requests, please try again later.' }
+    });
+    app.use('/api/', apiLimiter);
+
+    const loginLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 5,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { success: false, error: 'Too many login attempts, please try again later.' }
+    });
+    app.use('/api/auth/login', loginLimiter);
 
     // ---------------------------------------------------------------------------
     // Initialize SQLite database
@@ -36,22 +105,25 @@ export default Server(() => {
     initDatabase();
 
     // ---------------------------------------------------------------------------
-    // Health Check
+    // Health Check (no auth)
     // ---------------------------------------------------------------------------
     app.get('/health', (_req, res) => {
         const db = getDatabase();
-        const dbStatus = db ? 'connected' : 'disconnected';
         res.json({
             status: 'ok',
             platform: 'icp',
-            database: dbStatus,
+            database: db ? 'connected' : 'disconnected',
             timestamp: new Date().toISOString(),
         });
     });
 
-    // ---------------------------------------------------------------------------
-    // API Info
-    // ---------------------------------------------------------------------------
+    app.get('/api/health', (_req, res) => {
+        res.json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+        });
+    });
+
     app.get('/api/info', (_req, res) => {
         res.json({
             name: 'Cardamom ICP Backend',
@@ -63,22 +135,184 @@ export default Server(() => {
     });
 
     // ---------------------------------------------------------------------------
-    // TODO: Mount route modules from converted Firebase modules
-    // These will be added as each _fb.js module is converted to use sqliteClient
-    //
-    // Example (Phase 2+3):
-    //   import { authRoutes } from './routes/auth';
-    //   import { userRoutes } from './routes/users';
-    //   app.use('/api/auth', authRoutes);
-    //   app.use('/api/users', userRoutes);
+    // JWT Authentication — protect all /api/* except public routes
     // ---------------------------------------------------------------------------
+    const publicRoutes = [
+        '/api/auth/login',
+        '/api/auth/face-login',
+        '/api/health',
+        '/api/info',
+        '/api/orders/dropdowns',
+        '/api/users/face-data/all',
+    ];
+
+    app.use((req: any, res: any, next: any) => {
+        if (publicRoutes.includes(req.path)) return next();
+        if (req.path.startsWith('/api/')) return authenticateToken(req, res, next);
+        next();
+    });
+
+    // ---------------------------------------------------------------------------
+    // Public routes (no auth applied — handled by exemption above)
+    // ---------------------------------------------------------------------------
+    app.use('/api/auth', authRoutes);
+
+    // ---------------------------------------------------------------------------
+    // Authenticated routes
+    // ---------------------------------------------------------------------------
+
+    // Core business
+    app.use('/api/orders', ordersRoutes);
+    app.use('/api/stock', stockRoutes);
+    app.use('/api/users', usersRoutes);
+    app.use('/api/clients', clientsRoutes);
+
+    // Workers & attendance
+    app.use('/api/workers', workersRoutes);
+    app.use('/api/attendance', attendanceRoutes);
+
+    // Requests & approvals
+    app.use('/api/client-requests', clientRequestsRoutes);
+    app.use('/api/approval-requests', approvalRequestsRoutes);
+
+    // Admin
+    app.use('/api/admin', adminRoutes);
+
+    // Tasks & dropdowns
+    app.use('/api/tasks', tasksRoutes);
+    app.use('/api/dropdowns', dropdownsRoutes);
+
+    // Reports & analytics
+    app.use('/api/reports', reportsRoutes);
+    app.use('/api/analytics', analyticsRouter);
+    app.use('/api/ai', aiRouter);
+
+    // Notifications (polling replaces Socket.IO)
+    app.use('/api/notifications', notificationsRoutes);
+
+    // Already-modularized routers from _fb.js files
+    app.use('/api/expenses', expenses.router);
+    app.use('/api/gate-passes', gatepasses.router);
+    app.use('/api/dispatch-documents', dispatchDocuments.router);
+    app.use('/api/transport-documents', transportDocuments.router);
+    app.use('/api/offers', requireAdmin, offerPrice.router);
+
+    // Misc routes (whatsapp, outstanding, packed-boxes, logs, debug, access-log)
+    // These are mounted at /api since misc.js uses full sub-paths like /whatsapp/verify/:phone
+    app.use('/api', miscRoutes);
+
+    // Dashboard and sync (from admin routes but mounted at top level)
+    app.get('/api/dashboard', (req: any, res: any, next: any) => {
+        // Forward to admin router's /dashboard handler
+        req.url = '/dashboard';
+        adminRoutes.handle(req, res, next);
+    });
+    app.get('/api/sync', (req: any, res: any, next: any) => {
+        req.url = '/sync';
+        adminRoutes.handle(req, res, next);
+    });
 
     // ---------------------------------------------------------------------------
     // 404 handler
     // ---------------------------------------------------------------------------
-    app.use((_req, res) => {
+    app.use((req: any, res: any) => {
+        if (req.path.startsWith('/api/')) {
+            return res.status(404).json({ success: false, error: 'API endpoint not found' });
+        }
         res.status(404).json({ error: 'Not found' });
     });
+
+    // ---------------------------------------------------------------------------
+    // Scheduled Jobs (replaces server.js cron jobs)
+    // ---------------------------------------------------------------------------
+    const ESCALATION_INTERVAL = 60 * 60 * 1000; // 1 hour
+    const STOCK_RECONCILE_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+
+    async function escalatePendingApprovals() {
+        try {
+            const db = getDb();
+            const pending = await approvalRequests.getPendingRequests();
+            const now = Date.now();
+            const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+            let escalated = 0;
+
+            for (const req of pending) {
+                const createdAt = new Date(req.createdAt).getTime();
+                if (now - createdAt > TWENTY_FOUR_HOURS && !req.escalated) {
+                    await db.collection('approval_requests').doc(req.id).update({
+                        escalated: true,
+                        escalatedAt: new Date().toISOString(),
+                    });
+                    const notifDoc = db.collection('notifications').doc();
+                    await notifDoc.set({
+                        id: notifDoc.id,
+                        userId: 'all_admins',
+                        title: 'Approval Overdue (24h+)',
+                        body: `${req.actionType} request for ${req.resourceType} by ${req.requesterName || 'Unknown'} has been pending for >24 hours.`,
+                        type: 'approval_escalation',
+                        relatedRequestId: req.id,
+                        read: false,
+                        createdAt: new Date().toISOString(),
+                    });
+                    escalated++;
+                }
+            }
+            if (escalated > 0) {
+                console.log(`[Escalation] Escalated ${escalated} pending approval(s) older than 24 hours`);
+            }
+        } catch (err: any) {
+            console.error('[Escalation] Error:', err.message);
+        }
+    }
+
+    async function autoReconcileStockDrift() {
+        try {
+            console.log('[Stock Reconcile] Running 6-hour auto-reconciliation...');
+            await stockCalc.updateAllStocks();
+            const negatives = await stockCalc.detectNegativeStock();
+            if (negatives.length > 0) {
+                const db = getDb();
+                const notifDoc = db.collection('notifications').doc();
+                await notifDoc.set({
+                    id: notifDoc.id,
+                    userId: 'all_admins',
+                    title: 'Stock Drift Detected',
+                    body: `Auto-reconciliation found ${negatives.length} negative stock entries: ${negatives.slice(0, 3).map((n: any) => `${n.grade} (${n.type}): ${n.value}kg`).join(', ')}${negatives.length > 3 ? '...' : ''}`,
+                    type: 'stock_drift',
+                    metadata: { negatives },
+                    read: false,
+                    createdAt: new Date().toISOString(),
+                });
+                console.log(`[Stock Reconcile] Found ${negatives.length} negative stock entries`);
+            } else {
+                console.log('[Stock Reconcile] No drift detected');
+            }
+        } catch (err: any) {
+            console.error('[Stock Reconcile] Error:', err.message);
+        }
+    }
+
+    // Start scheduled jobs 60s after server startup
+    setTimeout(() => {
+        setInterval(escalatePendingApprovals, ESCALATION_INTERVAL);
+        setInterval(autoReconcileStockDrift, STOCK_RECONCILE_INTERVAL);
+        escalatePendingApprovals();
+        console.log('Scheduled: Approval escalation (1h), Stock reconciliation (6h)');
+    }, 60000);
+
+    // ---------------------------------------------------------------------------
+    // Data initialization (one-time migrations)
+    // ---------------------------------------------------------------------------
+    const users = require('../../backend/firebase/users_fb');
+    const taskManager = require('../../backend/firebase/taskManager_fb');
+    if (users.initializeFromJson) {
+        users.initializeFromJson().catch((err: any) => console.error('[Init] User migration error:', err.message));
+    }
+    if (taskManager.initializeFromJson) {
+        taskManager.initializeFromJson().catch((err: any) => console.error('[Init] Task migration error:', err.message));
+    }
+
+    console.log('Cardamom ICP Backend started — SQLite + Azle');
 
     return app.listen();
 });
