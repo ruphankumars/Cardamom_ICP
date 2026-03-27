@@ -10,54 +10,56 @@
 
 const jwt = require('jsonwebtoken');
 
-// Mock Firebase Admin before any module that imports it
-jest.mock('firebase-admin', () => {
-    const firestoreMock = {
-        collection: jest.fn(() => firestoreMock),
-        doc: jest.fn(() => firestoreMock),
-        get: jest.fn(() => Promise.resolve({ exists: false, data: () => ({}), docs: [], empty: true, size: 0 })),
-        set: jest.fn(() => Promise.resolve()),
-        update: jest.fn(() => Promise.resolve()),
-        delete: jest.fn(() => Promise.resolve()),
-        add: jest.fn(() => Promise.resolve({ id: 'mock-id' })),
-        where: jest.fn(() => firestoreMock),
-        orderBy: jest.fn(() => firestoreMock),
-        limit: jest.fn(() => firestoreMock),
-        batch: jest.fn(() => ({
-            set: jest.fn(),
-            update: jest.fn(),
-            delete: jest.fn(),
-            commit: jest.fn(() => Promise.resolve()),
-        })),
-        runTransaction: jest.fn((fn) => fn({
-            get: jest.fn(() => Promise.resolve({ exists: false, data: () => ({}), docs: [] })),
-            set: jest.fn(),
-            update: jest.fn(),
-        })),
-    };
-
-    return {
-        initializeApp: jest.fn(),
-        credential: {
-            cert: jest.fn(() => ({})),
-        },
-        firestore: Object.assign(jest.fn(() => firestoreMock), {
-            FieldValue: {
-                serverTimestamp: jest.fn(() => new Date().toISOString()),
-                increment: jest.fn((n) => n),
-                arrayUnion: jest.fn((...args) => args),
-                arrayRemove: jest.fn((...args) => args),
-                delete: jest.fn(),
-            },
-        }),
-        auth: jest.fn(() => ({
-            verifyIdToken: jest.fn(),
-        })),
-    };
-});
+// No firebase-admin mock needed — ICP backend uses SQLite via sqliteClient.js
 
 const request = require('supertest');
-const app = require('../../server');
+
+// Build a lightweight Express app matching the ICP index.ts wiring
+// (index.ts uses Azle Server() which can't be imported in Jest)
+const express = require('express');
+const { initDatabase } = require('../../src/backend/database/sqliteClient');
+const { authenticateToken, requireAdmin } = require('../../backend/middleware/auth');
+
+initDatabase();
+const app = express();
+app.use(express.json());
+
+// Public routes
+const authRoutes = require('../../src/backend/routes/auth');
+app.use('/api/auth', authRoutes);
+
+// JWT auth for /api/*
+app.use((req, res, next) => {
+    const publicPaths = ['/api/auth/login', '/api/auth/face-login', '/api/health'];
+    if (publicPaths.includes(req.path)) return next();
+    if (req.path.startsWith('/api/')) return authenticateToken(req, res, next);
+    next();
+});
+
+// Protected routes
+app.use('/api/orders', require('../../src/backend/routes/orders'));
+app.use('/api/stock', require('../../src/backend/routes/stock'));
+app.use('/api/users', require('../../src/backend/routes/users'));
+app.use('/api/clients', require('../../src/backend/routes/clients'));
+app.use('/api/workers', require('../../src/backend/routes/workers'));
+app.use('/api/attendance', require('../../src/backend/routes/attendance'));
+app.use('/api/client-requests', require('../../src/backend/routes/clientRequests'));
+app.use('/api/approval-requests', require('../../src/backend/routes/approvalRequests'));
+app.use('/api/admin', require('../../src/backend/routes/admin'));
+app.use('/api/tasks', require('../../src/backend/routes/tasks'));
+app.use('/api/dropdowns', require('../../src/backend/routes/dropdowns'));
+app.use('/api/reports', require('../../src/backend/routes/reports'));
+const { analyticsRouter, aiRouter } = require('../../src/backend/routes/analytics');
+app.use('/api/analytics', analyticsRouter);
+app.use('/api/ai', aiRouter);
+app.use('/api/notifications', require('../../src/backend/routes/notifications'));
+app.use('/api', require('../../src/backend/routes/misc'));
+
+// 404 handler
+app.use((req, res) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ success: false, error: 'API endpoint not found' });
+    res.status(404).json({ error: 'Not found' });
+});
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
