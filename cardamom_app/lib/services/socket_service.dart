@@ -1,134 +1,92 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'api_service.dart';
 
-/// Service for real-time WebSocket communication with the backend.
-/// Handles approval notifications and other real-time events.
+/// Service for real-time communication with the ICP backend via HTTP polling.
+///
+/// Replaces Socket.IO WebSockets (not supported on ICP) with periodic
+/// polling of the /api/notifications/poll endpoint.
 class SocketService extends ChangeNotifier {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() => _instance;
   SocketService._internal();
 
-  IO.Socket? _socket;
+  Timer? _pollTimer;
   bool _isConnected = false;
-  int _reconnectAttempts = 0;
-  static const int _maxReconnectAttempts = 3;
-  Timer? _reconnectTimer;
-  
+  String? _lastPollTimestamp;
+
   // Callbacks for approval events
   final List<void Function(Map<String, dynamic>)> _onApprovalCreatedCallbacks = [];
   final List<void Function(Map<String, dynamic>)> _onApprovalResolvedCallbacks = [];
   final List<void Function(Map<String, dynamic>)> _onApprovalUpdatedCallbacks = [];
   // Callbacks for transport assignment updates
   final List<void Function(Map<String, dynamic>)> _onTransportUpdatedCallbacks = [];
-  
+
   bool get isConnected => _isConnected;
-  
-  // Cloud backend URL
-  static const String _socketUrl = 'https://cardamom-ysgf.onrender.com';
-  
-  /// Connect to the WebSocket server
+
+  /// Connect — starts HTTP polling (replaces WebSocket connection).
   void connect({required String userId, required String role}) {
-    if (_socket != null) {
-      debugPrint('🔌 [SocketService] Already connected or connecting');
+    if (_pollTimer != null) {
+      debugPrint('[SocketService] Already polling');
       return;
     }
-    
-    debugPrint('🔌 [SocketService] Connecting to $_socketUrl as $userId ($role)');
-    
+
+    debugPrint('[SocketService] Starting HTTP polling as $userId ($role)');
+    _isConnected = true;
+    _lastPollTimestamp = DateTime.now().toIso8601String();
+    notifyListeners();
+
+    // Poll every 15 seconds for real-time-ish updates
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) => _poll());
+  }
+
+  Future<void> _poll() async {
     try {
-      _socket = IO.io(
-        _socketUrl,
-        IO.OptionBuilder()
-            .setTransports(['websocket', 'polling'])
-            .enableAutoConnect()
-            .enableReconnection()
-            .setReconnectionAttempts(_maxReconnectAttempts)
-            .setReconnectionDelay(2000)
-            .build(),
-      );
-      
-      _socket!.onConnect((_) {
+      final api = ApiService();
+      final since = _lastPollTimestamp ?? DateTime.now().subtract(const Duration(seconds: 30)).toIso8601String();
+      final response = await api.dio.get('/notifications/poll', queryParameters: {'since': since});
+      final data = response.data;
+
+      if (data is Map && data['success'] == true) {
+        final notifications = (data['notifications'] as List?) ?? [];
+        _lastPollTimestamp = DateTime.now().toIso8601String();
+
+        for (final notif in notifications) {
+          final n = notif as Map<String, dynamic>;
+          final type = n['type']?.toString() ?? '';
+
+          if (type == 'approval_request' || type == 'approval_created') {
+            for (final cb in _onApprovalCreatedCallbacks) {
+              cb(n);
+            }
+          } else if (type == 'approval_resolved') {
+            for (final cb in _onApprovalResolvedCallbacks) {
+              cb(n);
+            }
+          } else if (type == 'approval_updated') {
+            for (final cb in _onApprovalUpdatedCallbacks) {
+              cb(n);
+            }
+          } else if (type == 'transport_update' || type == 'transport-assignments-updated') {
+            for (final cb in _onTransportUpdatedCallbacks) {
+              cb(n);
+            }
+          }
+        }
+      }
+
+      if (!_isConnected) {
         _isConnected = true;
-        _reconnectAttempts = 0;
-        debugPrint('✅ [SocketService] Connected! Registering user...');
-        
-        // Register with the server
-        _socket!.emit('register', {'userId': userId, 'role': role});
         notifyListeners();
-      });
-      
-      _socket!.onDisconnect((_) {
-        _isConnected = false;
-        debugPrint('🔌 [SocketService] Disconnected');
-        notifyListeners();
-      });
-      
-      _socket!.onConnectError((error) {
-        debugPrint('❌ [SocketService] Connection error: $error');
-        _handleConnectionFailure();
-      });
-      
-      _socket!.onError((error) {
-        debugPrint('❌ [SocketService] Error: $error');
-      });
-      
-      // Listen for approval events
-      _socket!.on('approval:created', (data) {
-        debugPrint('📬 [SocketService] Received approval:created');
-        final eventData = data is Map<String, dynamic> 
-            ? data 
-            : <String, dynamic>{'data': data};
-        for (final callback in _onApprovalCreatedCallbacks) {
-          callback(eventData);
-        }
-      });
-      
-      _socket!.on('approval:resolved', (data) {
-        debugPrint('📬 [SocketService] Received approval:resolved');
-        final eventData = data is Map<String, dynamic> 
-            ? data 
-            : <String, dynamic>{'data': data};
-        for (final callback in _onApprovalResolvedCallbacks) {
-          callback(eventData);
-        }
-      });
-      
-      _socket!.on('approval:updated', (data) {
-        debugPrint('📬 [SocketService] Received approval:updated');
-        final eventData = data is Map<String, dynamic>
-            ? data
-            : <String, dynamic>{'data': data};
-        for (final callback in _onApprovalUpdatedCallbacks) {
-          callback(eventData);
-        }
-      });
-
-      // Listen for transport assignment updates
-      _socket!.on('transport-assignments-updated', (data) {
-        debugPrint('🚚 [SocketService] Received transport-assignments-updated');
-        final eventData = data is Map<String, dynamic>
-            ? data
-            : <String, dynamic>{'data': data};
-        for (final callback in _onTransportUpdatedCallbacks) {
-          callback(eventData);
-        }
-      });
-
+      }
     } catch (e) {
-      debugPrint('❌ [SocketService] Failed to create socket: $e');
-      _handleConnectionFailure();
+      if (_isConnected) {
+        _isConnected = false;
+        notifyListeners();
+      }
     }
   }
-  
-  void _handleConnectionFailure() {
-    _reconnectAttempts++;
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      debugPrint('⚠️ [SocketService] Max reconnect attempts reached. Falling back to polling.');
-      // Connection failed - the NotificationService will handle fallback to polling
-    }
-  }
-  
+
   /// Add callback for when a new approval request is created (for admins)
   void onApprovalCreated(void Function(Map<String, dynamic>) callback) {
     _onApprovalCreatedCallbacks.add(callback);
@@ -176,19 +134,16 @@ class SocketService extends ChangeNotifier {
     _onApprovalUpdatedCallbacks.clear();
     _onTransportUpdatedCallbacks.clear();
   }
-  
-  /// Disconnect from the WebSocket server
+
+  /// Disconnect — stops HTTP polling.
   void disconnect() {
-    _reconnectTimer?.cancel();
-    _socket?.disconnect();
-    _socket?.dispose();
-    _socket = null;
+    _pollTimer?.cancel();
+    _pollTimer = null;
     _isConnected = false;
-    _reconnectAttempts = 0;
-    debugPrint('🔌 [SocketService] Disconnected and disposed');
+    debugPrint('[SocketService] Polling stopped');
     notifyListeners();
   }
-  
+
   @override
   void dispose() {
     disconnect();

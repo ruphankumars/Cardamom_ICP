@@ -19,10 +19,11 @@ class ConnectivityService extends ChangeNotifier {
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   Timer? _periodicCheck;
 
-  // Primary health URL (cloud domain)
-  static const String _primaryHealthUrl = 'https://cardamom-ysgf.onrender.com/api/health';
-  // Fallback health URL (direct IP — used when DNS fails on WiFi)
-  static const String _fallbackHealthUrl = 'https://216.24.57.7/api/health';
+  // Primary health URL (ICP canister)
+  // TODO: Replace with actual ICP canister URL after dfx deploy
+  static const String _primaryHealthUrl = 'https://YOUR_CANISTER_ID.ic0.app/api/health';
+  // Fallback health URL (local development)
+  static const String _fallbackHealthUrl = 'http://localhost:4943/api/health';
 
   // Reuse a single Dio instance for health checks to avoid resource leaks
   late final Dio _healthDio;
@@ -124,7 +125,7 @@ class ConnectivityService extends ChangeNotifier {
 
     // DNS likely failed — try fallback IP (fixes home WiFi DNS issue)
     debugPrint('[ConnectivityService] Primary health check failed, trying fallback IP...');
-    if (await _tryHealthCheck(_fallbackHealthUrl, hostHeader: 'cardamom-ysgf.onrender.com')) {
+    if (await _tryHealthCheck(_fallbackHealthUrl)) {
       // Fallback worked — also trigger ApiService DNS fallback so API calls work
       ApiService.activateFallback();
       return;

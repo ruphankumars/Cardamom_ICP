@@ -54,11 +54,9 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
 
-      // If already logged in, register FCM token (e.g., after app restart)
+      // If already logged in, start notification polling
       if (_isLoggedIn) {
-        PushNotificationService.instance.registerToken().catchError((e) {
-          debugPrint('⚠️ FCM token registration on session load failed: $e');
-        });
+        PushNotificationService.instance.startPolling();
       }
     } catch (e) {
       debugPrint('⚠️ Error loading session: $e');
@@ -161,10 +159,8 @@ class AuthProvider extends ChangeNotifier {
 
           notifyListeners();
 
-          // Register FCM token for push notifications (fire-and-forget)
-          PushNotificationService.instance.registerToken().catchError((e) {
-            debugPrint('⚠️ FCM token registration failed: $e');
-          });
+          // Start notification polling (replaces FCM token registration)
+          PushNotificationService.instance.startPolling();
 
           // Store credentials securely for face login (fire-and-forget)
           SecureCredentialService.instance
@@ -227,12 +223,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    // Unregister FCM token before clearing auth
-    try {
-      await PushNotificationService.instance.unregisterToken();
-    } catch (e) {
-      debugPrint('⚠️ FCM token unregister failed: $e');
-    }
+    // Stop notification polling before clearing auth
+    PushNotificationService.instance.stopPolling();
 
     // Clear JWT token
     await _apiService.clearAuthToken();
@@ -355,9 +347,8 @@ class AuthProvider extends ChangeNotifier {
 
           notifyListeners();
 
-          PushNotificationService.instance.registerToken().catchError((e) {
-            debugPrint('⚠️ FCM token registration failed: $e');
-          });
+          // Start notification polling (replaces FCM token registration)
+          PushNotificationService.instance.startPolling();
 
           return true;
         } else {

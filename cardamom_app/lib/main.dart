@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
 import 'services/push_notification_service.dart';
 import 'services/auth_provider.dart';
 import 'services/notification_service.dart';
@@ -83,16 +81,12 @@ void main() async {
     return true; // Prevent crash
   };
   
-  // Initialize Firebase
+  // Initialize push notification polling (replaces Firebase Cloud Messaging)
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    debugPrint('🔥 Firebase initialized');
-    // Initialize push notifications (requests permission, sets up handlers)
     await PushNotificationService.instance.initialize();
+    debugPrint('Push notification polling initialized');
   } catch (e) {
-    debugPrint('⚠️ Firebase initialization failed: $e');
+    debugPrint('Push notification initialization failed: $e');
     // Continue anyway — app works without push notifications
   }
 

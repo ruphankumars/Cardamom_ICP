@@ -31,12 +31,13 @@ class ApiService {
     _dio.options.sendTimeout = const Duration(seconds: 120);
   }
 
-  // Cloud backend URL (Render deployment)
-  static const String _cloudUrl = 'https://cardamom-ysgf.onrender.com/api';
-  
-  // Fallback IP address (for DNS resolution issues)
-  static const String _fallbackIpUrl = 'https://216.24.57.7/api';
-  
+  // ICP canister backend URL (update after deployment)
+  // TODO: Replace with actual ICP canister URL after dfx deploy
+  static const String _cloudUrl = 'https://YOUR_CANISTER_ID.ic0.app/api';
+
+  // Fallback URL (local development)
+  static const String _fallbackIpUrl = 'http://localhost:4943/api';
+
   // Local development URL
   static const String _localUrl = 'http://172.20.10.4:3000/api';
   
@@ -109,11 +110,7 @@ class ApiService {
         // Update baseUrl in case fallback was triggered
         options.baseUrl = baseUrl;
         
-        // Set Host header for Render only on native platforms when using IP address
-        // Browsers forbid setting the Host header.
-        if (!kIsWeb && _useFallback) {
-          options.headers['Host'] = 'cardamom-ysgf.onrender.com';
-        }
+        // Host header override removed — ICP canister handles routing directly
         
         options.headers['Content-Type'] = 'application/json';
 
@@ -174,7 +171,7 @@ class ApiService {
           try {
             final opts = error.requestOptions;
             opts.baseUrl = _fallbackIpUrl;
-            opts.headers['Host'] = 'cardamom-ysgf.onrender.com';
+            // Host header override removed — ICP canister handles routing directly
             final response = await _dio.fetch(opts);
             return handler.resolve(response);
           } catch (retryError) {
@@ -1108,18 +1105,18 @@ class ApiService {
   Future<Response> deleteWorkerFaceData(String workerId) =>
       _dio.delete('/workers/$workerId/face-data');
 
-  // ========== FCM Token Management ==========
+  // ========== FCM Token Management (no-op on ICP) ==========
 
-  /// Register FCM token with backend for push notifications
+  /// Register FCM token — no-op on ICP (kept for API compatibility)
   Future<Response> registerFcmToken(String token) =>
       _dio.post('/users/fcm-token', data: {'token': token});
 
-  /// Remove FCM token from backend (on logout)
+  /// Remove FCM token — no-op on ICP (kept for API compatibility)
   Future<Response> removeFcmToken(String token) =>
       _dio.delete('/users/fcm-token', data: {'token': token});
 
-  // ── Persisted Notifications (Firestore) ──────────────────────────────
-  /// Fetch unread notifications from Firestore
+  // ── Persisted Notifications (SQLite on ICP) ──────────────────────────
+  /// Fetch unread notifications
   Future<Response> getNotifications() => _dio.get('/notifications');
 
   /// Mark all notifications as read

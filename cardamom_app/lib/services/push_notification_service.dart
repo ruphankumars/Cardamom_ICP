@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -10,192 +10,128 @@ import 'api_service.dart';
 import 'navigation_service.dart' show navigatorKey;
 import 'notification_service.dart';
 
-/// Top-level handler for background messages (must be top-level function).
-@pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('[FCM] Background message: ${message.notification?.title}');
-  // No need to show notification — Firebase handles it automatically
-  // when the app is in background/terminated.
-}
-
-/// Service to manage Firebase Cloud Messaging for push notifications.
+/// Service to manage push notifications via HTTP polling (ICP backend).
+///
+/// Replaces Firebase Cloud Messaging with periodic polling of
+/// GET /api/notifications/poll?since=<timestamp>.
 ///
 /// Handles:
-/// - Requesting notification permissions (iOS)
-/// - Registering FCM token with backend
-/// - Foreground message handling
+/// - Polling for new notifications from ICP canister
+/// - Foreground notification popups
 /// - Notification tap navigation
 class PushNotificationService {
   PushNotificationService._();
   static final PushNotificationService instance = PushNotificationService._();
 
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   bool _initialized = false;
-  String? _currentToken;
+  Timer? _pollTimer;
+  String? _lastPollTimestamp;
 
-  /// Initialize FCM — call once after Firebase.initializeApp().
+  /// Initialize notification polling.
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
 
-    // Set background message handler
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-    // Request permission (iOS will show the system permission dialog)
-    final settings = await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
-
-    debugPrint('[FCM] Permission status: ${settings.authorizationStatus}');
-
-    if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      debugPrint('[FCM] Notifications denied by user');
-      return;
-    }
-
-    // Get APNs token first (iOS requirement) — may need retries
-    if (Platform.isIOS) {
-      String? apnsToken = await _messaging.getAPNSToken();
-      if (apnsToken == null) {
-        // APNs token may not be ready immediately; retry up to 3 times
-        for (int i = 0; i < 3 && apnsToken == null; i++) {
-          debugPrint('[FCM] APNs token not ready, retry ${i + 1}/3...');
-          await Future.delayed(const Duration(seconds: 2));
-          apnsToken = await _messaging.getAPNSToken();
-        }
-      }
-      debugPrint('[FCM] APNs token: ${apnsToken != null ? "present (${apnsToken.length} chars)" : "⚠️ NULL — push notifications will NOT work!"}');
-    }
-
-    // Get FCM token
-    try {
-      _currentToken = await _messaging.getToken();
-      debugPrint('[FCM] Token: ${_currentToken != null ? "${_currentToken!.substring(0, 20)}..." : "⚠️ NULL"}');
-    } catch (e) {
-      debugPrint('[FCM] Error getting token: $e');
-    }
-
-    // Listen for token refresh
-    _messaging.onTokenRefresh.listen((newToken) {
-      debugPrint('[FCM] Token refreshed');
-      _currentToken = newToken;
-      _registerTokenWithBackend(newToken);
-    });
-
-    // Foreground messages — show a local notification-style banner
-    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-
-    // When user taps notification (app in background)
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-
-    // Check if app was opened from a terminated-state notification
-    final initialMessage = await _messaging.getInitialMessage();
-    if (initialMessage != null) {
-      // Defer popup until the app UI is fully built
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Future.delayed(const Duration(milliseconds: 800), () {
-          _showPopupFromMessage(initialMessage);
-        });
-      });
-    }
+    // Load last poll timestamp from prefs
+    final prefs = await SharedPreferences.getInstance();
+    _lastPollTimestamp = prefs.getString('lastNotifPollTimestamp');
 
     // Clear iOS badge on app open
     _clearBadge();
+
+    debugPrint('[PushNotif] Polling-based notification service initialized');
   }
 
-  /// Register the current FCM token with the backend for the logged-in user.
+  /// Start polling for notifications (called after login).
+  void startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _poll());
+    // Do an immediate poll
+    _poll();
+    debugPrint('[PushNotif] Polling started (30s interval)');
+  }
+
+  /// Stop polling (called on logout).
+  void stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    debugPrint('[PushNotif] Polling stopped');
+  }
+
+  /// Register token — no-op on ICP (FCM tokens are not used).
   Future<void> registerToken() async {
-    if (_currentToken == null) {
-      // Try getting token again
-      try {
-        _currentToken = await _messaging.getToken();
-      } catch (e) {
-        debugPrint('[FCM] Failed to get token: $e');
-        return;
-      }
-    }
-    if (_currentToken != null) {
-      await _registerTokenWithBackend(_currentToken!);
-    }
+    // No FCM tokens on ICP — notifications are polled via HTTP
   }
 
-  /// Unregister FCM token on logout.
+  /// Unregister token — no-op on ICP.
   Future<void> unregisterToken() async {
-    if (_currentToken == null) return;
-    try {
-      final api = ApiService();
-      await api.removeFcmToken(_currentToken!);
-      debugPrint('[FCM] Token unregistered from backend');
-    } catch (e) {
-      debugPrint('[FCM] Error unregistering token: $e');
-    }
+    // No FCM tokens on ICP
   }
 
-  Future<void> _registerTokenWithBackend(String token) async {
+  Future<void> _poll() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getString('userId');
-      if (userId == null) {
-        debugPrint('[FCM] No userId — skipping token registration');
-        return;
+      final api = ApiService();
+      final since = _lastPollTimestamp ?? DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String();
+      final response = await api.dio.get('/notifications/poll', queryParameters: {'since': since});
+      final data = response.data;
+
+      if (data is Map && data['success'] == true) {
+        final notifications = (data['notifications'] as List?) ?? [];
+        if (notifications.isNotEmpty) {
+          _lastPollTimestamp = DateTime.now().toIso8601String();
+          // Persist last poll timestamp
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('lastNotifPollTimestamp', _lastPollTimestamp!);
+
+          // Add to NotificationService and show popups
+          for (final notif in notifications) {
+            _handlePolledNotification(notif as Map<String, dynamic>);
+          }
+        }
       }
-      final api = ApiService();
-      await api.registerFcmToken(token);
-      debugPrint('[FCM] Token registered with backend');
     } catch (e) {
-      debugPrint('[FCM] Error registering token: $e');
+      // Silently fail — polling will retry on next tick
+      debugPrint('[PushNotif] Poll error: $e');
     }
   }
 
-  void _handleForegroundMessage(RemoteMessage message) {
-    debugPrint('[FCM] Foreground message: ${message.notification?.title}');
+  void _handlePolledNotification(Map<String, dynamic> notif) {
+    final title = notif['title']?.toString() ?? 'Notification';
+    final body = notif['body']?.toString() ?? '';
+    final type = notif['type']?.toString() ?? 'general';
+    final metadata = notif['metadata'] as Map<String, dynamic>? ?? {};
 
-    final notification = message.notification;
-    if (notification == null) return;
-
-    final dataType = message.data['type']?.toString() ?? '';
-
-    // Add to NotificationService for bell badge count + notification center
+    // Add to NotificationService for bell badge + notification center
     final context = navigatorKey.currentContext;
     if (context != null) {
       try {
-        final notifType = (dataType == 'new_order' || dataType == 'new_orders_batch')
-            ? 'orders'
-            : (dataType.startsWith('approval'))
-                ? 'approvals'
-                : (dataType == 'dispatch_doc' || dataType == 'transport_doc')
-                    ? 'documents'
-                    : 'general';
         final notifService = Provider.of<NotificationService>(context, listen: false);
         notifService.addNotification(AppNotification(
-          id: 'fcm_${DateTime.now().millisecondsSinceEpoch}',
-          title: notification.title ?? 'Notification',
-          body: notification.body ?? '',
+          id: notif['id']?.toString() ?? 'poll_${DateTime.now().millisecondsSinceEpoch}',
+          title: title,
+          body: body,
           timestamp: DateTime.now(),
-          type: notifType,
+          type: type,
         ));
       } catch (e) {
-        debugPrint('[FCM] Could not add to NotificationService: $e');
+        debugPrint('[PushNotif] Could not add to NotificationService: $e');
       }
     }
 
-    // Show popup for all notification types
-    _showPopupFromMessage(message);
-  }
-
-  void _handleNotificationTap(RemoteMessage message) {
-    debugPrint('[FCM] Notification tapped: ${message.data}');
-    final nav = navigatorKey.currentState;
-    if (nav != null) {
-      nav.pushNamedAndRemoveUntil('/', (route) => false);
+    // Show popup for important notification types
+    if (type == 'new_order' || type == 'new_orders_batch') {
+      _showOrderNotificationPopup(
+        title: title,
+        createdBy: metadata['createdBy']?.toString() ?? '',
+        client: metadata['client']?.toString() ?? '',
+        orderDetails: body,
+        data: {...metadata, 'type': type},
+      );
+    } else if (type == 'approval_request' || type == 'approval_resolved' ||
+               type == 'approval_escalation' || type == 'stock_drift') {
+      _showGeneralNotificationPopup(title: title, body: body, data: {...metadata, 'type': type});
     }
-    // Delay popup so dashboard loads first
-    Future.delayed(const Duration(milliseconds: 600), () {
-      _showPopupFromMessage(message);
-    });
+    // Other types silently appear in notification center
   }
 
   void _navigateFromData(Map<String, dynamic> data) {
@@ -203,7 +139,6 @@ class PushNotificationService {
     if (nav == null) return;
 
     final dataType = data['type']?.toString() ?? '';
-    // For order notifications, go to View Orders with client pre-filled
     if (dataType == 'new_order' || dataType == 'new_orders_batch') {
       final client = data['client']?.toString() ?? '';
       final billingFrom = data['billingFrom']?.toString() ?? '';
@@ -220,53 +155,11 @@ class PushNotificationService {
   /// Clear iOS badge count when the app is opened.
   void _clearBadge() {
     if (Platform.isIOS) {
-      _messaging.setForegroundNotificationPresentationOptions(
-        alert: true,
-        badge: false,
-        sound: true,
-      );
-      // Clear badge count via platform channel
       const channel = MethodChannel('com.sygt.cardamom/badge');
       channel.invokeMethod('clearBadge').catchError((_) {
-        // Badge channel not set up — use Firebase approach
-        debugPrint('[FCM] Badge channel not available, using Firebase');
+        debugPrint('[PushNotif] Badge channel not available');
       });
     }
-  }
-
-  /// Route incoming message to the appropriate popup.
-  void _showPopupFromMessage(RemoteMessage message) {
-    final data = message.data;
-    final dataType = data['type']?.toString() ?? '';
-
-    if (dataType == 'new_order' || dataType == 'new_orders_batch') {
-      final createdBy = data['createdBy']?.toString() ?? '';
-      final client = data['client']?.toString() ?? '';
-      final orderDetails = data['orderDetails']?.toString()
-          ?? message.notification?.body ?? '';
-      _showOrderNotificationPopup(
-        title: message.notification?.title ?? 'New Orders Added',
-        createdBy: createdBy,
-        client: client,
-        orderDetails: orderDetails,
-        data: data,
-      );
-    } else if (dataType == 'approval_request' || dataType == 'approval_resolved') {
-      _showGeneralNotificationPopup(
-        title: message.notification?.title ?? 'Notification',
-        body: message.notification?.body ?? '',
-        data: data,
-      );
-    } else {
-      // Any other notification type — show general popup
-      _showGeneralNotificationPopup(
-        title: message.notification?.title ?? 'Notification',
-        body: message.notification?.body ?? '',
-        data: data,
-      );
-    }
-
-    _clearBadge();
   }
 
   /// Show a general-purpose notification popup (approvals, etc.)
@@ -428,7 +321,6 @@ class PushNotificationService {
     final context = navigatorKey.currentContext;
     if (context == null) return;
 
-    // Parse order lines from the details string
     final lines = orderDetails.split('\n').where((l) => l.trim().isNotEmpty).toList();
 
     String clientDisplay = client;

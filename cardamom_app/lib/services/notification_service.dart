@@ -103,7 +103,7 @@ class NotificationService extends ChangeNotifier {
   bool _isLoadingApprovals = false;
   bool _isFetchingMyRequests = false; // Guard against concurrent fetchMyRequests calls
   Timer? _pollingTimer;
-  bool _useWebSocket = true; // WebSocket mode (falls back to polling if fails)
+  bool _useWebSocket = false; // ICP: always use HTTP polling (no WebSockets)
   String? _userId;
   String? _userRole;
   bool _isInitialized = false; // Guard: prevent multiple initializeRealtime() calls
@@ -153,7 +153,7 @@ class NotificationService extends ChangeNotifier {
     // Fetch once on init (startPolling handles the timer, but does NOT duplicate the initial fetch)
     fetchApprovalRequests();
     fetchMyRequests();
-    // Superadmin: also fetch persisted doc notifications from Firestore
+    // Superadmin: also fetch persisted doc notifications from SQLite
     if (role == 'superadmin') fetchPersistedNotifications();
     
     // Start polling as a reliable backup
@@ -269,7 +269,7 @@ class NotificationService extends ChangeNotifier {
     }
     _myRequestsUnread.clear();
     notifyListeners();
-    // 3. Mark Firestore-persisted notifications as read on server
+    // 3. Mark persisted notifications as read on server
     dismissFutures.add(
       _apiService.markAllNotificationsRead().catchError((e) {
         debugPrint('[NotificationService] Error marking notifications read: $e');
@@ -356,7 +356,7 @@ class NotificationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fetch persisted notifications from Firestore (superadmin only)
+  /// Fetch persisted notifications from backend (superadmin only)
   Future<void> fetchPersistedNotifications() async {
     if (_userRole != 'superadmin') return;
     try {
