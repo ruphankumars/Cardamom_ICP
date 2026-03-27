@@ -119,6 +119,20 @@ function exportDatabase() {
     return db.export();
 }
 
+/**
+ * Debounced write hook — schedules persistence to stable memory after DB mutations.
+ * Called automatically after addDoc, setDoc, updateDoc, deleteDoc, batch commit, transaction commit.
+ */
+let _schedulePersist = null;
+function _afterWrite() {
+    if (!_schedulePersist) {
+        try {
+            _schedulePersist = require('./stableMemory').schedulePersist;
+        } catch { _schedulePersist = () => {}; }
+    }
+    _schedulePersist(exportDatabase);
+}
+
 // ============================================================================
 // Firestore-compatible CRUD Helpers
 // ============================================================================
@@ -241,6 +255,7 @@ async function addDoc(collectionName, data) {
         [id, JSON.stringify(docData), now, now]
     );
 
+    _afterWrite();
     return { id };
 }
 
@@ -265,6 +280,7 @@ async function setDoc(collectionName, docId, data, merge = false) {
                 `UPDATE "${collectionName}" SET data = ?, _updatedAt = ? WHERE id = ?`,
                 [JSON.stringify(merged), now, docId]
             );
+            _afterWrite();
             return;
         }
     }
@@ -274,6 +290,7 @@ async function setDoc(collectionName, docId, data, merge = false) {
         `INSERT OR REPLACE INTO "${collectionName}" (id, data, _createdAt, _updatedAt) VALUES (?, ?, COALESCE((SELECT _createdAt FROM "${collectionName}" WHERE id = ?), ?), ?)`,
         [docId, JSON.stringify(docData), docId, now, now]
     );
+    _afterWrite();
 }
 
 /**
@@ -326,6 +343,7 @@ async function updateDoc(collectionName, docId, updates) {
         `UPDATE "${collectionName}" SET data = ?, _updatedAt = ? WHERE id = ?`,
         [JSON.stringify(merged), now, docId]
     );
+    _afterWrite();
 }
 
 /**
@@ -336,6 +354,7 @@ async function updateDoc(collectionName, docId, updates) {
 async function deleteDoc(collectionName, docId) {
     ensureDb();
     db.run(`DELETE FROM "${collectionName}" WHERE id = ?`, [docId]);
+    _afterWrite();
 }
 
 // ============================================================================
@@ -631,6 +650,7 @@ class SubcollectionRef {
             [id, this._parentId, JSON.stringify(docData), now, now]
         );
 
+        _afterWrite();
         return { id };
     }
 
@@ -695,6 +715,7 @@ async function runTransaction(updateFn) {
         const transaction = new Transaction();
         const result = await updateFn(transaction);
         db.run('COMMIT');
+        _afterWrite();
         return result;
     } catch (err) {
         db.run('ROLLBACK');
@@ -762,6 +783,7 @@ class WriteBatch {
                 }
             }
             db.run('COMMIT');
+            _afterWrite();
         } catch (err) {
             db.run('ROLLBACK');
             throw err;

@@ -48,7 +48,8 @@
           "OUTSTANDING_SYGT_SHEET_ID",
           "OUTSTANDING_ESPL_SHEET_ID",
           "SPREADSHEET_ID",
-          "PAGINATED_ENDPOINTS"
+          "PAGINATED_ENDPOINTS",
+          "LOGO_URL"
         ]
       }
     },

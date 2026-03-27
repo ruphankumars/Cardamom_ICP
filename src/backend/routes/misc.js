@@ -5,6 +5,7 @@
  */
 const router = require('express').Router();
 const path = require('path');
+const LOGO_URL = process.env.LOGO_URL || '';
 const outstanding = require('../../../backend/firebase/outstanding_fb');
 const packedBoxes = require('../../../backend/firebase/packed_boxes_fb');
 const whatsappLogs = require('../../../backend/firebase/whatsapp_logs_fb');
@@ -196,7 +197,7 @@ router.post('/whatsapp/send-text', requireAdmin, async (req, res) => {
         const axios = require('axios');
         const sygtTemplate = 'order_confirm_sygt_hxdbec4c73106f98d84aa16d0832993784';
         const esplTemplate = 'order_confirm_espl_hxa353a5933129970bac3b6ccc7d59d1fa';
-        const logoUrl = 'https://cardamom-ysgf.onrender.com/images/brand/espl_logo.png';
+        const logoUrl = LOGO_URL;
 
         const sendToPhone = async (targetPhone) => {
             let cleanPhone = String(targetPhone).replace(/\D/g, '');

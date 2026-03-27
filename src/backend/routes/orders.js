@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const LOGO_URL = process.env.LOGO_URL || '';
 const orderBook = require('../../../backend/firebase/orderBook_fb');
 const stockCalc = require('../../../backend/firebase/stock_fb');
 const pushNotifications = require('../../../backend/firebase/push_notifications_fb');
@@ -604,7 +605,7 @@ async function _sendOrderWhatsApp(orders) {
         : 'order_details_sygt_hxb338f8ebd49e1f6eacccd992d77372eb';
     // ESPL WABA templates (secondary sender: +919790005649)
     const esplTemplateName = billingFrom === 'ESPL' ? 'order_details_espl_v1' : 'order_details_sygt_v1';
-    const logoUrl = 'https://cardamom-ysgf.onrender.com/images/brand/espl_logo.png';
+    const logoUrl = LOGO_URL;
 
     for (const phone of phones) {
         const tasks = [];

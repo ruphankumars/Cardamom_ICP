@@ -31,9 +31,10 @@ class ApiService {
     _dio.options.sendTimeout = const Duration(seconds: 120);
   }
 
-  // ICP canister backend URL (update after deployment)
-  // TODO: Replace with actual ICP canister URL after dfx deploy
-  static const String _cloudUrl = 'https://YOUR_CANISTER_ID.ic0.app/api';
+  // ICP canister backend URL
+  // Local dev: http://uxrrr-q7777-77774-qaaaq-cai.localhost:4943/api
+  // Production: update canister ID after mainnet deploy (dfx deploy --network ic)
+  static const String _cloudUrl = 'https://uxrrr-q7777-77774-qaaaq-cai.ic0.app/api';
 
   // Fallback URL (local development)
   static const String _fallbackIpUrl = 'http://localhost:4943/api';

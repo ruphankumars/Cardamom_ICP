@@ -20,8 +20,8 @@ class ConnectivityService extends ChangeNotifier {
   Timer? _periodicCheck;
 
   // Primary health URL (ICP canister)
-  // TODO: Replace with actual ICP canister URL after dfx deploy
-  static const String _primaryHealthUrl = 'https://YOUR_CANISTER_ID.ic0.app/api/health';
+  // Production: update canister ID after mainnet deploy
+  static const String _primaryHealthUrl = 'https://uxrrr-q7777-77774-qaaaq-cai.ic0.app/api/health';
   // Fallback health URL (local development)
   static const String _fallbackHealthUrl = 'http://localhost:4943/api/health';
 

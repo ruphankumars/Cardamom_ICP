@@ -6,7 +6,7 @@
  * route modules extracted from the original server.js.
  */
 
-import { Server } from 'azle/experimental';
+import { Server, StableBTreeMap, preUpgrade } from 'azle/experimental';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -31,8 +31,39 @@ function rateLimit(opts: { windowMs: number; max: number; message?: any; standar
         next();
     };
 }
-import { getDatabase } from './database/sqliteClient';
+import { getDatabase, exportDatabase } from './database/sqliteClient';
 const { initializeDatabase } = require('./database/init');
+const { setStableStorage, persistNow } = require('./database/stableMemory');
+
+// ---------------------------------------------------------------------------
+// Stable Memory — persists SQLite database across canister upgrades
+// ---------------------------------------------------------------------------
+// Custom serializer for raw binary (Uint8Array) — avoids JSON overhead
+const binarySerializer = {
+    toBytes: (data: any) => {
+        if (data instanceof Uint8Array) return data;
+        if (typeof data === 'string') return new TextEncoder().encode(data);
+        return new Uint8Array(0);
+    },
+    fromBytes: (bytes: Uint8Array) => bytes,
+};
+const stringSerializer = {
+    toBytes: (data: any) => new TextEncoder().encode(String(data)),
+    fromBytes: (bytes: Uint8Array) => new TextDecoder().decode(bytes),
+};
+
+// Memory ID 0 reserved for the SQLite database binary
+const dbStorage = StableBTreeMap<string, Uint8Array>(0, stringSerializer, binarySerializer);
+
+// Wire up stable storage for the persistence layer
+setStableStorage({
+    get(key: string) {
+        return dbStorage.get(key);
+    },
+    set(key: string, value: any) {
+        dbStorage.insert(key, value instanceof Uint8Array ? value : new Uint8Array(value));
+    }
+});
 
 // Middleware
 const { authenticateToken, requireAdmin } = require('../../backend/middleware/auth');
@@ -378,4 +409,10 @@ export default Server(() => {
     console.log('Cardamom ICP Backend started — SQLite + Azle');
 
     return app.listen();
+}, {
+    // Persist database to stable memory before canister upgrades
+    preUpgrade: preUpgrade(() => {
+        console.log('[PreUpgrade] Persisting database to stable memory...');
+        persistNow(exportDatabase);
+    }),
 });
