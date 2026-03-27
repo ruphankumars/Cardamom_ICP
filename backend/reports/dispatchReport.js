@@ -7,7 +7,8 @@
  * Data sources: cart_orders, packed_orders (by date), gate_passes (vehicle/driver)
  */
 
-const PDFDocument = require('pdfkit');
+let _PDFDocument;
+function getPDFDocument() { if (!_PDFDocument) _PDFDocument = require('pdfkit'); return _PDFDocument; }
 const { getDb } = require('../firebaseClient');
 const { COMPANY, formatINR, drawCompanyHeader, pdfToBuffer, formatDate } = require('./pdfHelpers');
 
@@ -85,7 +86,7 @@ async function generate(params) {
         clientGroups[client].push(order);
     });
 
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new (getPDFDocument())({ size: 'A4', margin: 50 });
 
     // Header
     drawCompanyHeader(doc, 'DISPATCH SUMMARY');

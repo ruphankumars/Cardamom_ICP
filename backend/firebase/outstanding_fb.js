@@ -8,31 +8,32 @@
  * Firestore collection: client_name_mappings
  */
 
-const { google } = require('googleapis');
-const path = require('path');
-const fs = require('fs');
+// Lazy-load googleapis to avoid node:fs import at module load time (ICP WASM compat)
+let google;
+function _getGoogle() {
+    if (!google) google = require('googleapis').google;
+    return google;
+}
 const { getDb } = require('../../src/backend/database/sqliteClient');
 const { getAllClientContacts } = require('./client_contacts_fb');
 
-// ── Google Sheets auth (mirrors sheetsClient.js pattern) ───────────────
-const KEYFILEPATH = path.join(__dirname, '../../credentials.json');
+// ── Google Sheets auth (lazy-loaded for ICP compatibility) ───────────────
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
 
 let _auth;
 function _getAuth() {
     if (_auth) return _auth;
+    const g = _getGoogle();
     if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-        _auth = new google.auth.GoogleAuth({
+        _auth = new g.auth.GoogleAuth({
             credentials: {
                 client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
                 private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
             },
             scopes: SCOPES,
         });
-    } else if (fs.existsSync(KEYFILEPATH)) {
-        _auth = new google.auth.GoogleAuth({ keyFile: KEYFILEPATH, scopes: SCOPES });
     } else {
-        throw new Error('[Outstanding] No Google credentials found');
+        throw new Error('[Outstanding] No Google credentials found. Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.');
     }
     return _auth;
 }
@@ -40,7 +41,7 @@ function _getAuth() {
 let _sheets;
 function _getSheetsApi() {
     if (_sheets) return _sheets;
-    _sheets = google.sheets({ version: 'v4', auth: _getAuth() });
+    _sheets = _getGoogle().sheets({ version: 'v4', auth: _getAuth() });
     return _sheets;
 }
 

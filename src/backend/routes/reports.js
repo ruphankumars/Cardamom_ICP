@@ -3,14 +3,12 @@ const router = express.Router();
 
 const { requireAdmin } = require('../../../backend/middleware/auth');
 
-const invoiceReport = require('../../../backend/reports/invoiceReport');
-const dispatchReport = require('../../../backend/reports/dispatchReport');
-const stockPositionReport = require('../../../backend/reports/stockPositionReport');
-const stockMovementReport = require('../../../backend/reports/stockMovementReport');
-const clientStatementReport = require('../../../backend/reports/clientStatementReport');
-const salesSummaryReport = require('../../../backend/reports/salesSummaryReport');
-const attendanceReport = require('../../../backend/reports/attendanceReport');
-const expenseReport = require('../../../backend/reports/expenseReport');
+// Lazy-load report modules to avoid pdfkit/fontkit init at module load time (ICP WASM compat)
+const _lazy = {};
+function getReport(name) {
+    if (!_lazy[name]) _lazy[name] = require(`../../../backend/reports/${name}`);
+    return _lazy[name];
+}
 const { reportCache, concurrencyLimiter, ReportCache } = require('../../../backend/reports/reportCache');
 
 /**
@@ -87,49 +85,49 @@ function contentTypeForFormat(format) {
 
 // Invoice
 router.post('/invoice', requireAdmin,
-    reportHandler('invoice', invoiceReport.generate, 'application/pdf',
+    reportHandler('invoice', (...a) => getReport('invoiceReport').generate(...a), 'application/pdf',
         (params) => `invoice_${Date.now()}.pdf`));
 
 // Dispatch Summary
 router.post('/dispatch-summary', requireAdmin,
-    reportHandler('dispatch-summary', dispatchReport.generate, 'application/pdf',
+    reportHandler('dispatch-summary', (...a) => getReport('dispatchReport').generate(...a), 'application/pdf',
         (params) => `dispatch_${params.date || 'summary'}.pdf`));
 
 // Stock Position
 router.post('/stock-position', requireAdmin,
-    reportHandler('stock-position', stockPositionReport.generate, contentTypeForFormat,
+    reportHandler('stock-position', (...a) => getReport('stockPositionReport').generate(...a), contentTypeForFormat,
         (params, fmt) => `stock_position.${fmt === 'excel' ? 'xlsx' : 'pdf'}`));
 
 // Stock Movement
 router.post('/stock-movement', requireAdmin,
-    reportHandler('stock-movement', stockMovementReport.generate,
+    reportHandler('stock-movement', (...a) => getReport('stockMovementReport').generate(...a),
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         (params) => `stock_movement_${params.startDate}_${params.endDate}.xlsx`));
 
 // Client Statement
 router.post('/client-statement', requireAdmin,
-    reportHandler('client-statement', clientStatementReport.generate, 'application/pdf',
+    reportHandler('client-statement', (...a) => getReport('clientStatementReport').generate(...a), 'application/pdf',
         (params) => `statement_${(params.client || 'client').replace(/\s+/g, '_')}.pdf`));
 
 // Client Statement Bulk (ZIP)
 router.post('/client-statement/bulk', requireAdmin,
-    reportHandler('client-statement-bulk', clientStatementReport.generateBulk, 'application/zip',
+    reportHandler('client-statement-bulk', (...a) => getReport('clientStatementReport').generateBulk(...a), 'application/zip',
         (params) => `client_statements_${params.startDate}_${params.endDate}.zip`));
 
 // Sales Summary
 router.post('/sales-summary', requireAdmin,
-    reportHandler('sales-summary', salesSummaryReport.generate, contentTypeForFormat,
+    reportHandler('sales-summary', (...a) => getReport('salesSummaryReport').generate(...a), contentTypeForFormat,
         (params, fmt) => `sales_summary_${params.startDate}_${params.endDate}.${fmt === 'excel' ? 'xlsx' : 'pdf'}`));
 
 // Attendance
 router.post('/attendance', requireAdmin,
-    reportHandler('attendance', attendanceReport.generate,
+    reportHandler('attendance', (...a) => getReport('attendanceReport').generate(...a),
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         (params) => `attendance_${params.month || 'report'}.xlsx`));
 
 // Expenses
 router.post('/expenses', requireAdmin,
-    reportHandler('expenses', expenseReport.generate,
+    reportHandler('expenses', (...a) => getReport('expenseReport').generate(...a),
         (fmt) => fmt === 'monthly' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf',
         (params) => params.type === 'monthly' ? `expenses_${params.month}.xlsx` : `expenses_${params.date}.pdf`));
 

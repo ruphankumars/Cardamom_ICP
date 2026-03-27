@@ -7,7 +7,8 @@
  * Data sources: orders, cart_orders, packed_orders
  */
 
-const PDFDocument = require('pdfkit');
+let _PDFDocument;
+function getPDFDocument() { if (!_PDFDocument) _PDFDocument = require('pdfkit'); return _PDFDocument; }
 const ExcelJS = require('exceljs');
 const { getDb } = require('../firebaseClient');
 const CFG = require('../config');
@@ -108,7 +109,7 @@ function aggregateSales(orders) {
 async function generatePdf(orders, params) {
     const agg = aggregateSales(orders);
 
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new (getPDFDocument())({ size: 'A4', margin: 50 });
 
     drawCompanyHeader(doc, 'SALES SUMMARY');
 

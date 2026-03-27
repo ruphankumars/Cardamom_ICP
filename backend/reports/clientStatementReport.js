@@ -7,7 +7,8 @@
  * Data sources: orders, cart_orders, packed_orders (filtered by client + date range)
  */
 
-const PDFDocument = require('pdfkit');
+let _PDFDocument;
+function getPDFDocument() { if (!_PDFDocument) _PDFDocument = require('pdfkit'); return _PDFDocument; }
 const archiver = require('archiver');
 const { getDb } = require('../firebaseClient');
 const { COMPANY, formatINR, formatCurrency, drawCompanyHeader, pdfToBuffer, formatDate } = require('./pdfHelpers');
@@ -61,7 +62,7 @@ async function getAllClients() {
 async function generateSingleStatement(client, startDate, endDate) {
     const orders = await fetchClientOrders(client, startDate, endDate);
 
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new (getPDFDocument())({ size: 'A4', margin: 50 });
 
     drawCompanyHeader(doc, 'CLIENT STATEMENT');
 

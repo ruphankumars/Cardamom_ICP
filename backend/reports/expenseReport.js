@@ -7,7 +7,8 @@
  * Data sources: expenses collection, expense_items collection
  */
 
-const PDFDocument = require('pdfkit');
+let _PDFDocument;
+function getPDFDocument() { if (!_PDFDocument) _PDFDocument = require('pdfkit'); return _PDFDocument; }
 const ExcelJS = require('exceljs');
 const { getDb } = require('../firebaseClient');
 const { COMPANY, formatINR, formatCurrency, drawCompanyHeader, pdfToBuffer, formatDate } = require('./pdfHelpers');
@@ -68,7 +69,7 @@ async function fetchMonthlyExpenses(month) {
 async function generateDailyPdf(date) {
     const sheet = await fetchDailyExpense(date);
 
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new (getPDFDocument())({ size: 'A4', margin: 50 });
     drawCompanyHeader(doc, 'DAILY EXPENSE REPORT');
 
     doc.fontSize(10).font('Helvetica')

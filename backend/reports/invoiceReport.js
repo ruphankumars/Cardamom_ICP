@@ -5,7 +5,8 @@
  * Data sources: orders, cart_orders, packed_orders collections.
  */
 
-const PDFDocument = require('pdfkit');
+let _PDFDocument;
+function getPDFDocument() { if (!_PDFDocument) _PDFDocument = require('pdfkit'); return _PDFDocument; }
 const { getDb } = require('../firebaseClient');
 const { COMPANY, formatINR, formatCurrency, drawCompanyHeader, pdfToBuffer, formatDate } = require('./pdfHelpers');
 
@@ -58,7 +59,7 @@ async function generate(params) {
     const clientName = client || orders[0].client || 'Unknown Client';
 
     // Create PDF
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new (getPDFDocument())({ size: 'A4', margin: 50 });
 
     // Header
     drawCompanyHeader(doc, 'TAX INVOICE');

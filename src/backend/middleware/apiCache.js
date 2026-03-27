@@ -94,12 +94,15 @@ function invalidateCachePrefix(prefix) {
 }
 
 // Periodic sweep of expired entries (every 5 minutes)
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of _apiCache) {
-        if (now > entry.expiresAt) _apiCache.delete(key);
-    }
-}, 5 * 60 * 1000);
+// Deferred to avoid 'setInterval is not defined' outside Azle Server() callback
+if (typeof setInterval !== 'undefined') {
+    setInterval(() => {
+        const now = Date.now();
+        for (const [key, entry] of _apiCache) {
+            if (now > entry.expiresAt) _apiCache.delete(key);
+        }
+    }, 5 * 60 * 1000);
+}
 
 /**
  * Targeted cache invalidation middleware for write operations.

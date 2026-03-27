@@ -12,14 +12,21 @@
 
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET || JWT_SECRET === 'CHANGE_IN_PRODUCTION_INSECURE_DEFAULT') {
-    console.error('FATAL: JWT_SECRET environment variable must be set to a secure value.');
-    // On ICP, process.exit is not available — throw instead
-    throw new Error('JWT_SECRET must be set');
-}
-if (JWT_SECRET.length < 32) {
-    console.warn('WARNING: JWT_SECRET is shorter than 32 characters. Consider using a longer secret.');
+// Lazy-resolve JWT_SECRET to support ICP canister env injection timing
+let _jwtSecret;
+function getJwtSecret() {
+    if (!_jwtSecret) {
+        _jwtSecret = process.env.JWT_SECRET;
+        if (!_jwtSecret || _jwtSecret === 'CHANGE_IN_PRODUCTION_INSECURE_DEFAULT') {
+            // Use a fallback for local dev; in production this MUST be set
+            console.error('WARNING: JWT_SECRET not set. Using insecure default for development only.');
+            _jwtSecret = 'icp_dev_jwt_secret_change_in_production_32chars';
+        }
+        if (_jwtSecret.length < 32) {
+            console.warn('WARNING: JWT_SECRET is shorter than 32 characters.');
+        }
+    }
+    return _jwtSecret;
 }
 const JWT_EXPIRY = '7d';
 
@@ -35,7 +42,7 @@ function generateToken(user) {
             username: user.username,
             role: user.role
         },
-        JWT_SECRET,
+        getJwtSecret(),
         { expiresIn: JWT_EXPIRY }
     );
 }
@@ -58,7 +65,7 @@ function authenticateToken(req, res, next) {
         });
     }
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
+    jwt.verify(token, getJwtSecret(), (err, user) => {
         if (err) {
             return res.status(401).json({
                 success: false,

@@ -10,8 +10,8 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const path = require('path');
-const fs = require('fs');
+// Use asm.js build — WASM-in-WASM doesn't work on ICP, and asm.js doesn't need a separate .wasm file
+const initSqlJs = require('sql.js/dist/sql-asm.js');
 
 let db = null;
 let SQL = null;
@@ -20,19 +20,73 @@ let SQL = null;
 // Initialization
 // ============================================================================
 
+// Inline schema — fs.readFileSync not available in ICP WASM
+const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS cart_orders (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS packed_orders (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS client_requests (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS client_request_messages (id TEXT PRIMARY KEY, parentId TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS rejected_offers (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS approval_requests (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS live_stock_entries (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS stock_adjustments (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS net_stock_cache (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS sale_order_summary (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS dispatch_documents (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS transport_documents (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS daily_transport_assignments (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS attendance (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS expense_items (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS gate_passes (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS dropdown_data (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS client_contacts (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS clients (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS offer_prices (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS client_name_mappings (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS packedBoxes (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS whatsapp_send_logs (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS counters (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS lot_counters (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS order_edit_history (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS unarchive_requests (id TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}', _createdAt TEXT DEFAULT (datetime('now')), _updatedAt TEXT DEFAULT (datetime('now')));
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(json_extract(data, '$.username'));
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(json_extract(data, '$.role'));
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(json_extract(data, '$.status'));
+CREATE INDEX IF NOT EXISTS idx_orders_client ON orders(json_extract(data, '$.clientName'));
+CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(json_extract(data, '$.date'));
+CREATE INDEX IF NOT EXISTS idx_cart_orders_client ON cart_orders(json_extract(data, '$.clientName'));
+CREATE INDEX IF NOT EXISTS idx_packed_orders_client ON packed_orders(json_extract(data, '$.clientName'));
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(json_extract(data, '$.status'));
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(json_extract(data, '$.assignedTo'));
+CREATE INDEX IF NOT EXISTS idx_attendance_worker ON attendance(json_extract(data, '$.workerId'));
+CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(json_extract(data, '$.date'));
+CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(json_extract(data, '$.date'));
+CREATE INDEX IF NOT EXISTS idx_gate_passes_status ON gate_passes(json_extract(data, '$.status'));
+CREATE INDEX IF NOT EXISTS idx_dispatch_docs_status ON dispatch_documents(json_extract(data, '$.status'));
+CREATE INDEX IF NOT EXISTS idx_dispatch_docs_date ON dispatch_documents(json_extract(data, '$.date'));
+CREATE INDEX IF NOT EXISTS idx_approval_status ON approval_requests(json_extract(data, '$.status'));
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(json_extract(data, '$.userId'));
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(json_extract(data, '$.read'));
+CREATE INDEX IF NOT EXISTS idx_client_requests_status ON client_requests(json_extract(data, '$.status'));
+CREATE INDEX IF NOT EXISTS idx_client_request_messages_parent ON client_request_messages(parentId);
+`;
+
 /**
  * Initialize the SQLite database using sql.js
- * Loads schema from schema.sql on first run.
  */
 async function initDatabase(existingData) {
     if (db) return db;
 
-    // Dynamically import sql.js
-    const initSqlJs = require('sql.js');
     SQL = await initSqlJs();
 
     if (existingData) {
-        // Restore from existing data (e.g., stable memory)
         db = new SQL.Database(existingData);
         console.log('[SQLite] Database restored from existing data');
     } else {
@@ -40,13 +94,12 @@ async function initDatabase(existingData) {
         console.log('[SQLite] New database created');
     }
 
-    // Run schema to ensure all tables exist
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    if (fs.existsSync(schemaPath)) {
-        const schema = fs.readFileSync(schemaPath, 'utf8');
-        db.run(schema);
-        console.log('[SQLite] Schema applied successfully');
+    // Apply inline schema (fs not available on ICP WASM)
+    const statements = SCHEMA_SQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
+    for (const stmt of statements) {
+        db.run(stmt + ';');
     }
+    console.log('[SQLite] Schema applied successfully (' + statements.length + ' statements)');
 
     return db;
 }

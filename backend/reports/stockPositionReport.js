@@ -7,7 +7,8 @@
  * Data source: net_stock_cache collection (3 docs: Colour Bold, Fruit Bold, Rejection)
  */
 
-const PDFDocument = require('pdfkit');
+let _PDFDocument;
+function getPDFDocument() { if (!_PDFDocument) _PDFDocument = require('pdfkit'); return _PDFDocument; }
 const ExcelJS = require('exceljs');
 const { getDb } = require('../firebaseClient');
 const CFG = require('../config');
@@ -38,7 +39,7 @@ async function fetchStockData() {
  * Generate stock position PDF
  */
 async function generatePdf(stockByType) {
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new (getPDFDocument())({ size: 'A4', margin: 50 });
 
     drawCompanyHeader(doc, 'STOCK POSITION REPORT');
 

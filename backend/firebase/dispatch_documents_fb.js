@@ -6,8 +6,10 @@
 const { Router } = require('express');
 const { getDb, FieldValue } = require('../../src/backend/database/sqliteClient');
 const axios = require('axios');
-const { Jimp } = require('jimp');
-const PDFDocument = require('pdfkit');
+// Lazy-load heavy modules to avoid fontkit/pdfkit init crash on ICP WASM
+let _Jimp, _PDFDocument;
+function getJimp() { if (!_Jimp) _Jimp = require('jimp').Jimp; return _Jimp; }
+function getPDFDocument() { if (!_PDFDocument) _PDFDocument = require('pdfkit'); return _PDFDocument; }
 const pushNotifications = require('./push_notifications_fb');
 
 const { getClientContact } = require('./client_contacts_fb');
@@ -38,7 +40,7 @@ async function enhanceImage(rawBuffer) {
 
 // ── Helper: generate thumbnail from already-enhanced buffer (Jimp) ──
 async function generateThumbnail(enhancedBuffer) {
-    const image = await Jimp.read(enhancedBuffer);
+    const image = await getJimp().read(enhancedBuffer);
     image.resize({ w: 400 });
     return Buffer.from(await image.getBuffer('image/jpeg', { quality: 60 }));
 }
@@ -48,12 +50,12 @@ async function wrapImagesInPdf(jpegBuffers) {
     const buffers = Array.isArray(jpegBuffers) ? jpegBuffers : [jpegBuffers];
     const A4_W = 595, A4_H = 842;
 
-    const doc = new PDFDocument({ size: [A4_W, A4_H], margin: 0, autoFirstPage: false });
+    const doc = new (getPDFDocument())({ size: [A4_W, A4_H], margin: 0, autoFirstPage: false });
     const chunks = [];
     doc.on('data', chunk => chunks.push(chunk));
 
     for (const buf of buffers) {
-        const image = await Jimp.read(buf);
+        const image = await getJimp().read(buf);
         const scale = Math.min(A4_W / image.width, A4_H / image.height);
         const pageW = Math.round(image.width * scale);
         const pageH = Math.round(image.height * scale);

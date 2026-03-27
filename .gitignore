@@ -49,3 +49,4 @@ cardamom_app/.flutter-plugins-dependencies
 # SQLite database files
 *.db
 *.sqlite
+.azle/

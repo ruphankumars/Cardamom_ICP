@@ -4,8 +4,10 @@
  */
 const { Router } = require('express');
 const { getDb, FieldValue } = require('../../src/backend/database/sqliteClient');
-const { Jimp } = require('jimp');
-const PDFDocument = require('pdfkit');
+// Lazy-load heavy modules to avoid fontkit/pdfkit init crash on ICP WASM
+let _Jimp, _PDFDocument;
+function getJimp() { if (!_Jimp) _Jimp = require('jimp').Jimp; return _Jimp; }
+function getPDFDocument() { if (!_PDFDocument) _PDFDocument = require('pdfkit'); return _PDFDocument; }
 const pushNotifications = require('./push_notifications_fb');
 
 const router = Router();
@@ -31,7 +33,7 @@ const { uploadFile: uploadToFirebaseStorage } = require('../utils/storageHelper'
 // WhatsApp templates require image URLs — PDFs are rejected in media headers.
 // We create a simple placeholder JPEG with transport name as text.
 async function generatePreviewImage(transportName) {
-    const image = new Jimp({ width: 600, height: 400, color: 0xFFFFFFFF });
+    const image = new (getJimp())({ width: 600, height: 400, color: 0xFFFFFFFF });
     return Buffer.from(await image.getBuffer('image/jpeg', { quality: 80 }));
 }
 

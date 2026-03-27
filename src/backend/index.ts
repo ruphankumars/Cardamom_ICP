@@ -11,8 +11,28 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
-import { initDatabase, getDatabase } from './database/sqliteClient';
+// express-rate-limit uses node:net which is unavailable in Azle WASM.
+// Use a simple in-memory rate limiter instead.
+function rateLimit(opts: { windowMs: number; max: number; message?: any; standardHeaders?: boolean; legacyHeaders?: boolean }) {
+    const hits = new Map<string, { count: number; resetTime: number }>();
+    return (req: any, res: any, next: any) => {
+        // req.ip crashes on ICP (no real socket) — use header or fallback
+        const key = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || 'icp-caller';
+        const now = Date.now();
+        let entry = hits.get(key);
+        if (!entry || now > entry.resetTime) {
+            entry = { count: 0, resetTime: now + opts.windowMs };
+            hits.set(key, entry);
+        }
+        entry.count++;
+        if (entry.count > opts.max) {
+            return res.status(429).json(opts.message || { success: false, error: 'Too many requests' });
+        }
+        next();
+    };
+}
+import { getDatabase } from './database/sqliteClient';
+const { initializeDatabase } = require('./database/init');
 
 // Middleware
 const { authenticateToken, requireAdmin } = require('../../backend/middleware/auth');
@@ -52,11 +72,20 @@ const { getDb } = require('./database/sqliteClient');
 
 export default Server(() => {
     const app = express();
-    app.set('trust proxy', 1);
+    // Disable trust proxy — ICP has no real sockets, so req.ip/proxyaddr crashes
+    app.set('trust proxy', false);
 
     // ---------------------------------------------------------------------------
     // Middleware Stack (same order as original server.js)
     // ---------------------------------------------------------------------------
+
+    // ICP WASM compat: patch req so Express doesn't crash accessing missing socket
+    app.use((req: any, _res: any, next: any) => {
+        if (!req.connection) req.connection = {};
+        if (!req.connection.remoteAddress) req.connection.remoteAddress = '127.0.0.1';
+        if (!req.socket) req.socket = req.connection;
+        next();
+    });
 
     // Security headers
     app.use(helmet({
@@ -100,21 +129,39 @@ export default Server(() => {
     app.use('/api/auth/login', loginLimiter);
 
     // ---------------------------------------------------------------------------
-    // Initialize SQLite database
+    // Initialize SQLite database (async — sql.js needs WASM init)
     // ---------------------------------------------------------------------------
-    initDatabase();
+    let dbReady = false;
+    let dbInitError: string | null = null;
+    let dbInitPromise = initializeDatabase().then(() => {
+        dbReady = true;
+        console.log('[Cardamom] Database initialized successfully');
+    }).catch((err: any) => {
+        dbInitError = err?.message || String(err);
+        console.error('[Cardamom] Database init failed:', dbInitError);
+    });
+
+    // Middleware: wait for DB to be ready before processing API requests
+    app.use('/api', (req: any, res: any, next: any) => {
+        if (dbReady) return next();
+        dbInitPromise.then(() => next()).catch(() =>
+            res.status(503).json({ success: false, error: 'Database initializing, please retry' })
+        );
+    });
 
     // ---------------------------------------------------------------------------
     // Health Check (no auth)
     // ---------------------------------------------------------------------------
     app.get('/health', (_req, res) => {
         const db = getDatabase();
-        res.json({
+        const resp: any = {
             status: 'ok',
             platform: 'icp',
             database: db ? 'connected' : 'disconnected',
             timestamp: new Date().toISOString(),
-        });
+        };
+        if (dbInitError) resp.dbInitError = dbInitError;
+        res.json(resp);
     });
 
     app.get('/api/health', (_req, res) => {

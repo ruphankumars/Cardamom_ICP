@@ -11,11 +11,11 @@
  * - Debounced persistence to avoid excessive writes
  */
 
-const fs = require('fs');
-const path = require('path');
-
-// Default file-based persistence path (for local development)
-const DEFAULT_DB_PATH = path.join(__dirname, '../../../data/cardamom.db');
+// Lazy-load fs/path — not available on ICP WASM, only needed for local dev fallback
+let _fs, _path;
+function getFs() { if (!_fs) _fs = require('fs'); return _fs; }
+function getPath() { if (!_path) _path = require('path'); return _path; }
+function getDefaultDbPath() { return getPath().join(__dirname, '../../../data/cardamom.db'); }
 
 // Debounce timer for persistence
 let persistTimer = null;
@@ -146,9 +146,11 @@ function saveToStableMemory(data) {
 
 function loadFromFilesystem() {
     try {
-        if (fs.existsSync(DEFAULT_DB_PATH)) {
-            const buffer = fs.readFileSync(DEFAULT_DB_PATH);
-            console.log(`[StableMemory] Loaded database from ${DEFAULT_DB_PATH} (${buffer.length} bytes)`);
+        const fs = getFs();
+        const dbPath = getDefaultDbPath();
+        if (fs.existsSync(dbPath)) {
+            const buffer = fs.readFileSync(dbPath);
+            console.log(`[StableMemory] Loaded database from ${dbPath} (${buffer.length} bytes)`);
             return new Uint8Array(buffer);
         }
     } catch (err) {
@@ -159,12 +161,14 @@ function loadFromFilesystem() {
 
 function saveToFilesystem(data) {
     try {
-        const dir = path.dirname(DEFAULT_DB_PATH);
+        const fs = getFs();
+        const dbPath = getDefaultDbPath();
+        const dir = getPath().dirname(dbPath);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
-        fs.writeFileSync(DEFAULT_DB_PATH, Buffer.from(data));
-        console.log(`[StableMemory] Saved database to ${DEFAULT_DB_PATH} (${data.length} bytes)`);
+        fs.writeFileSync(dbPath, Buffer.from(data));
+        console.log(`[StableMemory] Saved database to ${dbPath} (${data.length} bytes)`);
     } catch (err) {
         console.error('[StableMemory] Failed to save to filesystem:', err.message);
     }
