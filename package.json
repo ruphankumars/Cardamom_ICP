@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "echo 'Flutter web build already at cardamom_app/build/web. Run npm run build-flutter to rebuild.'",
     "build-flutter": "cd cardamom_app && flutter build web --release",
     "deploy-web": "npm run build-flutter && rm -rf public/* && cp -R cardamom_app/build/web/* public/",
     "dfx:start": "dfx start --background --clean",

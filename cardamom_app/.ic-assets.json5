@@ -1,0 +1,18 @@
+[
+  {
+    "match": "**/*",
+    "security_policy": "standard"
+  },
+  {
+    "match": "**/*.js",
+    "headers": {
+      "Content-Type": "application/javascript"
+    }
+  },
+  {
+    "match": "**/*.wasm",
+    "headers": {
+      "Content-Type": "application/wasm"
+    }
+  }
+]
