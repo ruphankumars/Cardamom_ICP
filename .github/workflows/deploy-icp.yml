@@ -1,0 +1,111 @@
+name: Deploy to ICP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  DFX_VERSION: '0.24.3'
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backend tests
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-secret-for-ci
+
+  build-frontend:
+    name: Build Flutter Web
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: cardamom_app
+        run: flutter pub get
+
+      - name: Build Flutter web
+        working-directory: cardamom_app
+        run: flutter build web --release
+
+      - name: Upload Flutter web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-build
+          path: cardamom_app/build/web/
+          retention-days: 1
+
+  deploy:
+    name: Deploy to ICP
+    runs-on: ubuntu-latest
+    needs: [test, build-frontend]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v4
+        with:
+          name: flutter-web-build
+          path: cardamom_app/build/web/
+
+      - name: Install DFX SDK
+        run: |
+          sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Setup DFX identity
+        run: |
+          mkdir -p ~/.config/dfx/identity/deploy
+          echo "${{ secrets.DFX_IDENTITY_PEM }}" > ~/.config/dfx/identity/deploy/identity.pem
+          chmod 600 ~/.config/dfx/identity/deploy/identity.pem
+          dfx identity use deploy
+
+      - name: Deploy backend canister
+        run: dfx deploy backend --network ic --yes
+        env:
+          DFX_WALLET: ${{ secrets.ICP_WALLET_ID }}
+
+      - name: Deploy frontend canister
+        run: dfx deploy frontend --network ic --yes
+        env:
+          DFX_WALLET: ${{ secrets.ICP_WALLET_ID }}
+
+      - name: Print canister URLs
+        run: |
+          echo "Backend: https://$(dfx canister --network ic id backend).icp0.io"
+          echo "Frontend: https://$(dfx canister --network ic id frontend).icp0.io"
