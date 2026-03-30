@@ -31,7 +31,7 @@ function rateLimit(opts: { windowMs: number; max: number; message?: any; standar
         next();
     };
 }
-import { getDatabase, exportDatabase } from './database/sqliteClient';
+import { getDatabase, exportDatabase, replaceDatabase } from './database/sqliteClient';
 const { initializeDatabase } = require('./database/init');
 const { setStableStorage, persistNow } = require('./database/stableMemory');
 
@@ -200,6 +200,35 @@ export default Server(() => {
             status: 'ok',
             timestamp: new Date().toISOString(),
         });
+    });
+
+    // ---------------------------------------------------------------------------
+    // DB Import endpoint — protected by JWT + admin role
+    // ---------------------------------------------------------------------------
+    app.post('/api/admin/system/import-db', authenticateToken, requireAdmin, (req: any, res: any) => {
+        try {
+            const contentType = req.headers['content-type'] || '';
+            if (!contentType.includes('application/octet-stream')) {
+                return res.status(400).json({ success: false, error: 'Content-Type must be application/octet-stream' });
+            }
+            // Express raw body — need raw body parser
+            const chunks: Buffer[] = [];
+            req.on('data', (chunk: Buffer) => chunks.push(chunk));
+            req.on('end', () => {
+                try {
+                    const buffer = Buffer.concat(chunks);
+                    if (buffer.length < 100) {
+                        return res.status(400).json({ success: false, error: 'Upload too small to be a valid SQLite database' });
+                    }
+                    (replaceDatabase as any)(new Uint8Array(buffer));
+                    res.json({ success: true, message: `Database replaced (${buffer.length} bytes)` });
+                } catch (err: any) {
+                    res.status(500).json({ success: false, error: err.message });
+                }
+            });
+        } catch (err: any) {
+            res.status(500).json({ success: false, error: err.message });
+        }
     });
 
     app.get('/api/info', (_req, res) => {

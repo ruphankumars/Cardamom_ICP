@@ -120,6 +120,23 @@ function exportDatabase() {
 }
 
 /**
+ * Replace the in-memory database with new binary data (for DB upload/import)
+ */
+function replaceDatabase(data) {
+    if (!SQL) throw new Error('SQL not initialized');
+    if (db) db.close();
+    db = new SQL.Database(new Uint8Array(data));
+    // Re-apply schema to ensure any missing tables/indexes exist
+    const statements = SCHEMA_SQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
+    for (const stmt of statements) {
+        try { db.run(stmt); } catch (_) {}
+    }
+    console.log('[SQLite] Database replaced from uploaded binary');
+    _afterWrite(); // persist to stable memory
+    return true;
+}
+
+/**
  * Debounced write hook — schedules persistence to stable memory after DB mutations.
  * Called automatically after addDoc, setDoc, updateDoc, deleteDoc, batch commit, transaction commit.
  */
@@ -921,6 +938,7 @@ module.exports = {
     initDatabase,
     getDatabase,
     exportDatabase,
+    replaceDatabase,
 
     // Re-export for compatibility (admin is no longer needed but some modules reference it)
     admin: {

@@ -21,7 +21,7 @@ class ConnectivityService extends ChangeNotifier {
 
   // Primary health URL (ICP canister)
   // Production: update canister ID after mainnet deploy
-  static const String _primaryHealthUrl = 'https://uxrrr-q7777-77774-qaaaq-cai.ic0.app/api/health';
+  static const String _primaryHealthUrl = 'https://ge6oz-5qaaa-aaaaj-qrraq-cai.raw.icp0.io/api/health';
   // Fallback health URL (local development)
   static const String _fallbackHealthUrl = 'http://localhost:4943/api/health';
 
