@@ -6,7 +6,7 @@
  *   node scripts/upload-db.js [path/to/cardamom.db]
  *
  * Defaults to data/cardamom.db
- * Target: mainnet backend canister ge6oz-5qaaa-aaaaj-qrraq-cai
+ * Target: mainnet backend canister ur3eo-5iaaa-aaaah-avewa-cai
  */
 
 const https = require('https');
@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const dbPath = process.argv[2] || path.join(__dirname, '..', 'data', 'cardamom.db');
-const CANISTER_ID = 'ge6oz-5qaaa-aaaaj-qrraq-cai';
+const CANISTER_ID = 'ur3eo-5iaaa-aaaah-avewa-cai';
 const HOSTNAME = `${CANISTER_ID}.raw.icp0.io`;
 
 if (!fs.existsSync(dbPath)) {
