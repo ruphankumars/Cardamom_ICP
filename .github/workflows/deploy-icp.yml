@@ -1,0 +1,80 @@
+name: Deploy to ICP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        env:
+          JWT_SECRET: test-secret-for-ci-minimum-32-characters-long
+          NODE_ENV: test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dfx
+        uses: dfinity/setup-dfx@main
+        with:
+          dfx-version: '0.31.0'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Flutter web
+        run: cd cardamom_app && flutter build web --release
+
+      - name: Setup dfx identity
+        run: |
+          dfx identity import --storage-mode plaintext deploy-identity <(echo "$DFX_IDENTITY_PEM")
+          dfx identity use deploy-identity
+        env:
+          DFX_IDENTITY_PEM: ${{ secrets.DFX_IDENTITY_PEM }}
+
+      - name: Deploy to IC mainnet
+        run: dfx deploy --network ic
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          NODE_ENV: production
+          META_WHATSAPP_TOKEN: ${{ secrets.META_WHATSAPP_TOKEN }}
+          META_WHATSAPP_PHONE_ID: ${{ secrets.META_WHATSAPP_PHONE_ID }}
+          META_WHATSAPP_SYGT_PHONE_ID: ${{ secrets.META_WHATSAPP_SYGT_PHONE_ID }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          OUTSTANDING_SYGT_SHEET_ID: ${{ secrets.OUTSTANDING_SYGT_SHEET_ID }}
+          OUTSTANDING_ESPL_SHEET_ID: ${{ secrets.OUTSTANDING_ESPL_SHEET_ID }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          LOGO_URL: ${{ secrets.LOGO_URL }}
