@@ -34,7 +34,7 @@ class ApiService {
   // ICP canister backend URL
   // Local dev: http://uxrrr-q7777-77774-qaaaq-cai.localhost:4943/api
   // Production: update canister ID after mainnet deploy (dfx deploy --network ic)
-  static const String _cloudUrl = 'https://ur3eo-5iaaa-aaaah-avewa-cai.raw.icp0.io/api';
+  static const String _cloudUrl = 'https://ge6oz-5qaaa-aaaaj-qrraq-cai.raw.icp0.io/api';
 
   // Fallback URL (local development)
   static const String _fallbackIpUrl = 'http://localhost:4943/api';
