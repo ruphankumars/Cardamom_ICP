@@ -14,9 +14,19 @@ router.post('/login', async (req, res) => {
         if (!username || !password) {
             return res.status(400).json({ success: false, error: 'Username and password are required' });
         }
-        const result = await users.authenticateUser(username, password);
+        let result;
+        try {
+            result = await users.authenticateUser(username, password);
+        } catch (authErr) {
+            return res.status(500).json({ success: false, error: 'auth: ' + authErr.message });
+        }
         if (result.success) {
-            const token = generateToken(result.user);
+            let token;
+            try {
+                token = generateToken(result.user);
+            } catch (tokenErr) {
+                return res.status(500).json({ success: false, error: 'token: ' + tokenErr.message });
+            }
             res.json({
                 success: true,
                 user: result.user,
@@ -28,7 +38,7 @@ router.post('/login', async (req, res) => {
         }
     } catch (err) {
         console.error(err);
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'outer: ' + err.message });
     }
 });
 

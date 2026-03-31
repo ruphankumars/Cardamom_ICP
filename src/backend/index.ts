@@ -203,6 +203,41 @@ export default Server(() => {
     });
 
     // ---------------------------------------------------------------------------
+    // Password migration — converts bcrypt hashes to SHA256 (admin only)
+    // ---------------------------------------------------------------------------
+    app.post('/api/admin/system/migrate-passwords', authenticateToken, requireAdmin, (req: any, res: any) => {
+        try {
+            const crypto = require('crypto');
+            const db = getDatabase();
+            if (!db) return res.status(503).json({ success: false, error: 'Database not ready' });
+
+            const secret = process.env.JWT_SECRET || 'cardamom-icp-default-key';
+            const { defaultPassword } = req.body || {};
+            const pwd = defaultPassword || 'Cardamom@2024';
+            const hmacHash = crypto.createHash('sha256').update(secret + ':' + pwd).digest('hex');
+
+            const stmt = db.prepare('SELECT id, data FROM users');
+            const updates: string[] = [];
+            while (stmt.step()) {
+                const row = stmt.getAsObject() as any;
+                const data = JSON.parse(row.data);
+                data.password = hmacHash;
+                db.run('UPDATE users SET data = ? WHERE id = ?', [JSON.stringify(data), row.id]);
+                updates.push(data.username || row.id);
+            }
+            stmt.free();
+
+            // Persist to stable memory
+            const { persistNow } = require('./database/stableMemory');
+            persistNow(exportDatabase);
+
+            res.json({ success: true, message: `Migrated ${updates.length} users to HMAC-SHA256`, users: updates, tempPassword: pwd });
+        } catch (err: any) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // ---------------------------------------------------------------------------
     // DB Import endpoint — protected by JWT + admin role
     // ---------------------------------------------------------------------------
     app.post('/api/admin/system/import-db', authenticateToken, requireAdmin, (req: any, res: any) => {

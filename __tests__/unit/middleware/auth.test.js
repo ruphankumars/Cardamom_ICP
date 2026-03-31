@@ -9,7 +9,6 @@
  * - requireAuth(): alias for authenticateToken
  */
 
-const jwt = require('jsonwebtoken');
 const { mockRequest, mockResponse, mockNext, JWT_SECRET } = require('../../helpers');
 const { testUsers } = require('../../fixtures/testData');
 
@@ -20,8 +19,15 @@ const {
     requireAdmin,
     requireClient,
     requireAuth,
-    JWT_EXPIRY,
+    JWT_EXPIRY_MS,
 } = require('../../../backend/middleware/auth');
+
+// Helper to decode our custom JWT tokens
+function decodeToken(token) {
+    const parts = token.split('.');
+    const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/') + '==', 'base64').toString('utf8'));
+    return payload;
+}
 
 // ============================================================================
 // generateToken()
@@ -36,7 +42,7 @@ describe('generateToken()', () => {
 
     test('token payload contains id, username, and role', () => {
         const token = generateToken(testUsers.admin);
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = decodeToken(token);
         expect(decoded.id).toBe(testUsers.admin.id);
         expect(decoded.username).toBe(testUsers.admin.username);
         expect(decoded.role).toBe(testUsers.admin.role);
@@ -44,24 +50,24 @@ describe('generateToken()', () => {
 
     test('token has exp field (expiration)', () => {
         const token = generateToken(testUsers.admin);
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = decodeToken(token);
         expect(decoded.exp).toBeDefined();
         expect(typeof decoded.exp).toBe('number');
     });
 
     test('token expires in approximately 7 days', () => {
         const token = generateToken(testUsers.admin);
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const now = Math.floor(Date.now() / 1000);
-        const sevenDays = 7 * 24 * 60 * 60;
-        // Allow 10 second tolerance
-        expect(decoded.exp - now).toBeGreaterThan(sevenDays - 10);
-        expect(decoded.exp - now).toBeLessThanOrEqual(sevenDays + 10);
+        const decoded = decodeToken(token);
+        const now = Date.now();
+        const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+        // exp is in ms (our custom JWT), allow 10s tolerance
+        expect(decoded.exp - now).toBeGreaterThan(sevenDaysMs - 10000);
+        expect(decoded.exp - now).toBeLessThanOrEqual(sevenDaysMs + 10000);
     });
 
     test('token has iat field (issued at)', () => {
         const token = generateToken(testUsers.admin);
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = decodeToken(token);
         expect(decoded.iat).toBeDefined();
     });
 
@@ -71,13 +77,13 @@ describe('generateToken()', () => {
         expect(token1).not.toBe(token2);
     });
 
-    test('JWT_EXPIRY constant is 7d', () => {
-        expect(JWT_EXPIRY).toBe('7d');
+    test('JWT_EXPIRY_MS constant is 7 days in ms', () => {
+        expect(JWT_EXPIRY_MS).toBe(7 * 24 * 60 * 60 * 1000);
     });
 
     test('works with minimal user object (id, username, role)', () => {
         const token = generateToken({ id: '99', username: 'min', role: 'admin' });
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = decodeToken(token);
         expect(decoded.id).toBe('99');
         expect(decoded.username).toBe('min');
         expect(decoded.role).toBe('admin');
@@ -150,35 +156,36 @@ describe('authenticateToken()', () => {
         expect(next).not.toHaveBeenCalled();
     });
 
-    test('returns 401 for expired token', (done) => {
-        // Create a token that expires immediately
-        const token = jwt.sign(
-            { id: '1', username: 'test', role: 'admin' },
-            JWT_SECRET,
-            { expiresIn: '0s' }
-        );
+    test('returns 401 for expired token', () => {
+        // Create a token that already expired
+        const token = generateToken({ id: '1', username: 'test', role: 'admin' });
+        // Manually craft an expired token
+        const crypto = require('crypto');
+        const base64url = (s) => Buffer.from(s).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+        const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+        const body = base64url(JSON.stringify({ id: '1', username: 'test', role: 'admin', iat: 0, exp: 1 }));
+        const sig = crypto.createHash('sha256').update(JWT_SECRET + '.' + header + '.' + body).digest('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+        const expiredToken = header + '.' + body + '.' + sig;
 
-        // Small delay to ensure expiration
-        setTimeout(() => {
-            const req = mockRequest({
-                headers: { authorization: `Bearer ${token}` },
-            });
-            const res = mockResponse();
-            const next = mockNext();
+        const req = mockRequest({
+            headers: { authorization: `Bearer ${expiredToken}` },
+        });
+        const res = mockResponse();
+        const next = mockNext();
 
-            authenticateToken(req, res, next);
+        authenticateToken(req, res, next);
 
-            expect(res.status).toHaveBeenCalledWith(401);
-            expect(next).not.toHaveBeenCalled();
-            done();
-        }, 50);
+        expect(res.status).toHaveBeenCalledWith(401);
+        expect(next).not.toHaveBeenCalled();
     });
 
     test('returns 401 for token signed with wrong secret', () => {
-        const token = jwt.sign(
-            { id: '1', username: 'test', role: 'admin' },
-            'wrong-secret-key-that-is-totally-different'
-        );
+        const crypto = require('crypto');
+        const base64url = (s) => Buffer.from(s).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+        const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+        const body = base64url(JSON.stringify({ id: '1', username: 'test', role: 'admin', iat: Date.now(), exp: Date.now() + 60000 }));
+        const sig = crypto.createHash('sha256').update('wrong-secret.' + header + '.' + body).digest('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+        const token = header + '.' + body + '.' + sig;
         const req = mockRequest({
             headers: { authorization: `Bearer ${token}` },
         });

@@ -14,7 +14,7 @@
 
 const { initDatabase, getDatabase, exportDatabase } = require('./sqliteClient');
 const { loadFromStorage, schedulePersist } = require('./stableMemory');
-const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 /**
  * Initialize the complete database stack.
@@ -57,8 +57,8 @@ async function seedDefaults() {
 
         // Create default superadmin
         const tempPassword = 'CardamomAdmin@2024';
-        const salt = bcrypt.genSaltSync(10);
-        const hashedPassword = bcrypt.hashSync(tempPassword, salt);
+        const HASH_SECRET = process.env.JWT_SECRET || 'cardamom-icp-default-key';
+        const hashedPassword = crypto.createHash('sha256').update(HASH_SECRET + ':' + tempPassword).digest('hex');
 
         const adminData = {
             username: 'admin',

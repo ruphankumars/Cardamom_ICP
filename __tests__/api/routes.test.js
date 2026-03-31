@@ -8,7 +8,7 @@
  * Firebase modules are mocked to avoid requiring real credentials.
  */
 
-const jwt = require('jsonwebtoken');
+const { generateToken } = require('../../backend/middleware/auth');
 
 // No firebase-admin mock needed — ICP backend uses SQLite via sqliteClient.js
 
@@ -64,11 +64,7 @@ app.use((req, res) => {
 const JWT_SECRET = process.env.JWT_SECRET;
 
 function makeToken(role = 'admin') {
-    return jwt.sign(
-        { id: '1', username: 'testuser', role },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-    );
+    return generateToken({ id: '1', username: 'testuser', role });
 }
 
 // ============================================================================

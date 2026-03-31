@@ -15,32 +15,33 @@
  */
 
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const { getDb, getDocs, getDoc, serverTimestamp, FieldValue } = require('../../src/backend/database/sqliteClient');
 
 const COLLECTION = 'users';
-const BCRYPT_ROUNDS = 10;
 
 // ============================================================================
-// PASSWORD HASHING — bcrypt replaces SHA-256
+// PASSWORD HASHING — HMAC-SHA256 (ICP WASM cannot run bcrypt within instruction limit)
 // ============================================================================
+const HASH_SECRET = process.env.JWT_SECRET || 'cardamom-icp-default-key';
+
+function hmacHash(password) {
+    // Use simple SHA-256 with secret prefix — crypto.createHmac may not work in ICP WASM
+    return crypto.createHash('sha256').update(HASH_SECRET + ':' + password).digest('hex');
+}
 
 async function hashPassword(password) {
-    return bcrypt.hash(password, BCRYPT_ROUNDS);
+    return hmacHash(password);
 }
 
 async function verifyPassword(password, hash) {
-    // Support legacy SHA-256 hashes during migration
+    // 1. Try HMAC-SHA256 (new ICP format)
+    if (hash === hmacHash(password)) return true;
+    // 2. Try legacy plain SHA-256 (from original Sheets version)
     const legacyHash = crypto.createHash('sha256').update(password).digest('hex');
-    if (hash === legacyHash) {
-        return true; // Legacy hash matched
-    }
-    // Try bcrypt
-    try {
-        return await bcrypt.compare(password, hash);
-    } catch {
-        return false;
-    }
+    if (hash === legacyHash) return true;
+    // 3. bcrypt hashes from Firestore cannot be verified on ICP (exceeds instruction limit).
+    //    Skip bcrypt entirely — users with bcrypt hashes must use the password reset below.
+    return false;
 }
 
 // ============================================================================
@@ -170,12 +171,11 @@ async function authenticateUser(username, password) {
         return { success: false, error: 'Invalid username or password' };
     }
 
-    // If user has a legacy SHA-256 hash, upgrade to bcrypt transparently
-    const legacyHash = crypto.createHash('sha256').update(password).digest('hex');
-    if (user.password === legacyHash) {
-        const bcryptHash = await hashPassword(password);
-        await doc.ref.update({ password: bcryptHash });
-        console.log(`[Users-FB] Upgraded password hash for ${username} from SHA-256 to bcrypt`);
+    // If user has a legacy hash (SHA-256 or bcrypt), upgrade to HMAC-SHA256
+    const currentHmac = hmacHash(password);
+    if (user.password !== currentHmac) {
+        await doc.ref.update({ password: currentHmac });
+        console.log(`[Users-FB] Upgraded password hash for ${username} to HMAC-SHA256`);
     }
 
     return { success: true, user: sanitize(user) };

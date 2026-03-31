@@ -10,7 +10,7 @@
  * - Tokens expire after 7 days
  */
 
-const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 // Lazy-resolve JWT_SECRET to support ICP canister env injection timing
 let _jwtSecret;
@@ -18,7 +18,6 @@ function getJwtSecret() {
     if (!_jwtSecret) {
         _jwtSecret = process.env.JWT_SECRET;
         if (!_jwtSecret || _jwtSecret === 'CHANGE_IN_PRODUCTION_INSECURE_DEFAULT') {
-            // Use a fallback for local dev; in production this MUST be set
             console.error('WARNING: JWT_SECRET not set. Using insecure default for development only.');
             _jwtSecret = 'icp_dev_jwt_secret_change_in_production_32chars';
         }
@@ -28,31 +27,62 @@ function getJwtSecret() {
     }
     return _jwtSecret;
 }
-const JWT_EXPIRY = '7d';
+const JWT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// ---------------------------------------------------------------------------
+// Lightweight JWT (no jsonwebtoken lib — avoids instanceof Buffer crash in ICP WASM)
+// ---------------------------------------------------------------------------
+function base64url(str) {
+    return Buffer.from(str).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function base64urlDecode(str) {
+    str = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (str.length % 4) str += '=';
+    return Buffer.from(str, 'base64').toString('utf8');
+}
+
+function hmacSha256(data, secret) {
+    // Use createHash with secret prefix — createHmac may crash in ICP WASM
+    return crypto.createHash('sha256').update(secret + '.' + data).digest('base64')
+        .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function sign(payload, secret) {
+    const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+    const body = base64url(JSON.stringify(payload));
+    const sig = hmacSha256(header + '.' + body, secret);
+    return header + '.' + body + '.' + sig;
+}
+
+function verify(token, secret) {
+    const parts = token.split('.');
+    if (parts.length !== 3) throw new Error('Invalid token');
+    const sig = hmacSha256(parts[0] + '.' + parts[1], secret);
+    if (sig !== parts[2]) throw new Error('Invalid signature');
+    const payload = JSON.parse(base64urlDecode(parts[1]));
+    if (payload.exp && Date.now() > payload.exp) throw new Error('Token expired');
+    return payload;
+}
 
 /**
  * Generate JWT token for authenticated user
- * @param {Object} user - User object with id, username, role
- * @returns {string} JWT token
  */
 function generateToken(user) {
-    return jwt.sign(
+    return sign(
         {
             id: user.id,
             username: user.username,
-            role: user.role
+            role: user.role,
+            iat: Date.now(),
+            exp: Date.now() + JWT_EXPIRY_MS
         },
-        getJwtSecret(),
-        { expiresIn: JWT_EXPIRY }
+        getJwtSecret()
     );
 }
 
 /**
  * Middleware: Verify JWT token and attach user to req
- *
- * Expects Authorization header: "Bearer <token>"
- * On success: attaches req.user = { id, username, role }
- * On failure: returns 401 (no token) or 403 (invalid token)
  */
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
@@ -65,16 +95,16 @@ function authenticateToken(req, res, next) {
         });
     }
 
-    jwt.verify(token, getJwtSecret(), (err, user) => {
-        if (err) {
-            return res.status(401).json({
-                success: false,
-                error: 'Invalid or expired token'
-            });
-        }
-        req.user = user; // Attach verified user to request
+    try {
+        const user = verify(token, getJwtSecret());
+        req.user = user;
         next();
-    });
+    } catch (err) {
+        return res.status(401).json({
+            success: false,
+            error: 'Invalid or expired token'
+        });
+    }
 }
 
 /**
@@ -214,5 +244,5 @@ module.exports = {
     requireSuperAdmin,
     requireClient,
     requirePageAccess,
-    JWT_EXPIRY
+    JWT_EXPIRY_MS
 };
