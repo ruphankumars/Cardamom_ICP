@@ -132,7 +132,13 @@ function replaceDatabase(data) {
         try { db.run(stmt); } catch (_) {}
     }
     console.log('[SQLite] Database replaced from uploaded binary');
-    _afterWrite(); // persist to stable memory
+    // Persist IMMEDIATELY to stable memory (not debounced) so data survives upgrades/restarts
+    try {
+        const { persistNow } = require('./stableMemory');
+        persistNow(exportDatabase);
+    } catch (e) {
+        console.error('[SQLite] Failed to persist replaced database:', e.message);
+    }
     return true;
 }
 
