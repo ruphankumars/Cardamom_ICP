@@ -184,7 +184,7 @@ class CardamomApp extends StatelessWidget {
       child: MaterialApp(
       navigatorKey: navigatorKey,
       navigatorObservers: [appRouteObserver, routeObserver],
-      title: 'Emperor Cardamom',
+      title: 'ICP Cardamom App',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       initialRoute: '/',

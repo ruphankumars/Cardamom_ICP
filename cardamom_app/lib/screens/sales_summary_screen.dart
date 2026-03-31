@@ -120,7 +120,7 @@ class _SalesSummaryScreenState extends State<SalesSummaryScreen> with RouteAware
     int grandTotalOrders = 0;
 
     final buffer = StringBuffer();
-    buffer.writeln('Emperor Cardamom - Sales Summary');
+    buffer.writeln('ICP Cardamom App - Sales Summary');
 
     // Date info
     if (_selectedDate != null) {
@@ -160,7 +160,7 @@ class _SalesSummaryScreenState extends State<SalesSummaryScreen> with RouteAware
     final text = buffer.toString();
 
     try {
-      Share.share(text, subject: 'Emperor Cardamom - Sales Summary');
+      Share.share(text, subject: 'ICP Cardamom App - Sales Summary');
     } catch (_) {
       // Fallback to clipboard
       Clipboard.setData(ClipboardData(text: text));
