@@ -22,6 +22,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Install DFX SDK (required by azle postinstall)
+        run: |
+          DFX_VERSION=${{ env.DFX_VERSION }} DFXVM_INIT_YES=true sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"
+          echo "$HOME/.local/share/dfx/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: npm ci
 
@@ -74,6 +79,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Install DFX SDK (required by azle postinstall)
+        run: |
+          DFX_VERSION=${{ env.DFX_VERSION }} DFXVM_INIT_YES=true sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"
+          echo "$HOME/.local/share/dfx/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: npm ci
 
@@ -82,11 +92,6 @@ jobs:
         with:
           name: flutter-web-build
           path: cardamom_app/build/web/
-
-      - name: Install DFX SDK
-        run: |
-          sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"
-          echo "$HOME/bin" >> $GITHUB_PATH
 
       - name: Setup DFX identity
         run: |
