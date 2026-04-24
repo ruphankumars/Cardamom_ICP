@@ -69,7 +69,9 @@ jobs:
     name: Deploy to ICP
     runs-on: ubuntu-latest
     needs: [test, build-frontend]
-    if: github.ref == 'refs/heads/main'
+    # Only deploy on manual trigger — requires DFX_IDENTITY_PEM + ICP_WALLET_ID secrets.
+    # Render handles the live backend deploy automatically on push to main.
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
