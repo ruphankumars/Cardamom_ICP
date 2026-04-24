@@ -71,6 +71,40 @@ async function _readSheet(spreadsheetId, range) {
     return res.data.values || [];
 }
 
+// ── Date parser: handle multiple formats (dd MMM yyyy, dd/MM/yyyy, dd-MM-yyyy, dd/MM/yy) ──
+const _MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, sept:8, oct:9, nov:10, dec:11 };
+function _parseBillDate(str) {
+    if (!str) return null;
+    const s = String(str).trim();
+    // "10 Mar 2026" or "10-Mar-2026" or "10 March 2026"
+    let m = s.match(/^(\d{1,2})[\s\-\/]+([A-Za-z]{3,})[\s\-\/]+(\d{2,4})$/);
+    if (m) {
+        const d = parseInt(m[1], 10);
+        const mon = _MONTHS[m[2].toLowerCase().slice(0, m[2].toLowerCase().startsWith('sept') ? 4 : 3)];
+        if (mon === undefined) return null;
+        let y = parseInt(m[3], 10);
+        if (y < 100) y += 2000;
+        return new Date(y, mon, d);
+    }
+    // "dd/MM/yyyy" or "dd-MM-yyyy" or "dd/MM/yy"
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m) {
+        const d = parseInt(m[1], 10);
+        const mon = parseInt(m[2], 10) - 1;
+        let y = parseInt(m[3], 10);
+        if (y < 100) y += 2000;
+        return new Date(y, mon, d);
+    }
+    return null;
+}
+
+function _daysBetween(fromDate, toDate) {
+    const MS = 24 * 60 * 60 * 1000;
+    const a = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+    const b = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+    return Math.round((b - a) / MS);
+}
+
 // ── Parser: Formatted_Outstanding tab → structured data ────────────────
 function _parseOutstandingSheet(rows, companyKey) {
     if (!rows || rows.length < 5) return null;
@@ -79,6 +113,9 @@ function _parseOutstandingSheet(rows, companyKey) {
     const companyFull = String(rows[0][0] || '').trim();
     const asOnRaw = String(rows[1][0] || '').trim();
     const asOnDate = asOnRaw.replace(/^As on:\s*/i, '').trim();
+
+    // Always recalc days against TODAY (sheet's "As on" may be stale, causing 7-day offset bugs)
+    const today = new Date();
 
     // Parse data rows (starting from row 5, index 4)
     const clients = {};
@@ -91,7 +128,15 @@ function _parseOutstandingSheet(rows, companyKey) {
         const partyName = String(row[2] || '').trim();
         const amountRaw = String(row[3] || '').replace(/[₹\s,]/g, '').trim();
         const amount = Number(amountRaw) || 0;
-        const days = parseInt(row[4], 10) || 0;
+
+        // Recompute days from bill date vs today (fallback to sheet value if unparseable)
+        const sheetDays = parseInt(row[4], 10) || 0;
+        const parsedBillDate = _parseBillDate(date);
+        let days = sheetDays;
+        if (parsedBillDate) {
+            const recalc = _daysBetween(parsedBillDate, today);
+            if (recalc >= 0) days = recalc;
+        }
 
         if (!partyName) continue;
 
